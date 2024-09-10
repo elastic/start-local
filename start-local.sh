@@ -35,7 +35,7 @@ echo 'Note: do not use this script in a production environment'
 echo '--------------------------------------------------------'
 
 # Version
-version="0.1"
+version="0.1.1"
 
 # Name of the error log
 error_log="error-start-local.log"
@@ -176,8 +176,12 @@ create_api_key() {
   local es_password=$1
   local name=$2
   local response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
-  local api_key="$(echo "$response" | grep -oP '"encoded":\s*"\K[^"]+')"
-  echo $api_key
+  if [ -z "$response" ]; then
+    echo ""
+  else
+    local api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
+    echo $api_key
+  fi
 }
 
 # Check the requirements
@@ -361,7 +365,9 @@ set -e
 
 # Create an API key for Elasticsearch
 api_key=$(create_api_key $es_password $folder_name)
-echo "ES_LOCAL_API_KEY=\"$api_key\"" >> .env
+if [ -n "$api_key" ]; then
+  echo "ES_LOCAL_API_KEY=${api_key}" >> .env
+fi
 
 if [ "$need_wait_for_kibana" = true ]; then
   wait_for_kibana 120
@@ -378,6 +384,8 @@ echo "We created a folder ${folder} containing docker-compose.yml and .env files
 echo "You can use docker compose to manage the services."
 echo "More information can be found at https://github.com/elastic/start-local"
 echo
-echo "An API key for Elasticsearch has been created (stored in .env):"
-echo $api_key
+if [ -n "$api_key" ]; then
+  echo "An API key for Elasticsearch has been created (stored in .env):"
+  echo $api_key
+fi
 echo "You can use it with our SDK, see https://www.elastic.co/guide/en/elasticsearch/client"
