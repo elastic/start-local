@@ -34,6 +34,9 @@ echo 'Run Elasticsearch and Kibana for local testing'
 echo 'Note: do not use this script in a production environment'
 echo '--------------------------------------------------------'
 
+# Version
+version="0.1"
+
 # Name of the error log
 error_log="error-start-local.log"
 
