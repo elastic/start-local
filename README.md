@@ -1,7 +1,15 @@
 # Try Elasticsearch and Kibana locally
 
 Try Elasticsearch and Kibana using a simple shell script for local
-development.
+development. It uses [docker](https://www.docker.com/) to install
+the services and offers a trial [Platinum](https://www.elastic.co/subscriptions)
+license for 1 month. After the month the license will become
+[Free and Open Basic](https://www.elastic.co/subscriptions).
+
+For instance, the Platinum version offers [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) retrieval model and the [Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html).
+The Free and Open Basic includes the [vector search](https://www.elastic.co/what-is/vector-search) 
+and [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/current/esql.html).
+For a full list of subscription and features [read this page](https://www.elastic.co/subscriptions).
 
 This script can be executed only on Linux and Mac environments.
 We do not support Microsoft Windows at the moment.
