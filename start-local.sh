@@ -213,7 +213,7 @@ if [ $? -ne 0 ]; then
   docker="docker-compose up -d"
   docker_stop="docker-compose stop"
   docker_clean="docker-compose rm -fsv"
-  docker_version=$(docker-compose --version | grep -oP '\K[0-9]+\.[0-9]+\.[0-9]+')
+  docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
   if [ $(compare_versions "$docker_version" "$min_docker_compose") = "lt" ]; then
     echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
     echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
@@ -223,7 +223,7 @@ if [ $? -ne 0 ]; then
 else
   docker_stop="docker compose stop"
   docker_clean="docker compose rm -fsv"
-  docker_version=$(docker compose version | grep -oP '\K[0-9]+\.[0-9]+\.[0-9]+')
+  docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
   # --wait option has been introduced in 2.1.1+
   if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
     docker="docker compose up --wait"
