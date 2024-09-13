@@ -30,9 +30,11 @@ echo ' |  __| | |/ _` / __| __| |/ __|'
 echo ' | |____| | (_| \__ \ |_| | (__ '
 echo ' |______|_|\__,_|___/\__|_|\___|'
 echo '--------------------------------------------------------'
-echo 'Run Elasticsearch and Kibana for local testing'
-echo 'Note: do not use this script in a production environment'
+echo '🚀 Run Elasticsearch and Kibana for local testing'
 echo '--------------------------------------------------------'
+echo 
+echo 'ℹ️ Do not use this script in a production environment'
+echo
 
 # Version
 version="0.1.1"
@@ -344,10 +346,10 @@ volumes:
   dev-kibana:
 EOM
 
-echo "Set up of Elasticsearch and Kibana v${es_version}..."
+echo "⌛️Setting up Elasticsearch and Kibana v${es_version}..."
 echo "- Created the ${folder} folder"
 echo "- Generated random passwords"
-echo "- Created a .env file with the settings"
+echo "- Created a .env file with settings"
 echo "- Created a docker-compose.yml file"
 
 # Execute docker compose
@@ -374,18 +376,21 @@ if [ "$need_wait_for_kibana" = true ]; then
 fi
 
 # Success
-echo "Congrats, Elasticsearch and Kibana successfully installed!"
 echo
-echo "Open the browser at http://localhost:5601"
+echo "🎉 Congrats, Elasticsearch and Kibana are successfully installed and running!"
+echo
+echo "🌐 Access Kibana at http://localhost:5601"
 echo "Use 'elastic' as username and '${es_password}' as password."
 echo
-echo "-- Configuration details"
-echo "We created a folder ${folder} containing docker-compose.yml and .env files."
-echo "You can use docker compose to manage the services."
-echo "More information can be found at https://github.com/elastic/start-local"
+echo "🛠️ Configuration details"
+echo "We created the folder '${folder}' containing the following files:"
+echo "  - docker-compose.yml: Use this file to manage the services."
+echo "  - .env: This file contains environment variables and credentials."
+echo "Learn more at https://github.com/elastic/start-local"
 echo
 if [ -n "$api_key" ]; then
-  echo "An API key for Elasticsearch has been created (stored in .env):"
+  echo "🔑 An API key for Elasticsearch has been created (stored in .env):"
   echo $api_key
 fi
-echo "You can use it with our SDK, see https://www.elastic.co/guide/en/elasticsearch/client"
+echo "ℹ️ You can use this API key to connect to Elasticsearch with our language clients"
+echo "Learn more at https://www.elastic.co/guide/en/elasticsearch/client"
