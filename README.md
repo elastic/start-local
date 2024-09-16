@@ -29,7 +29,7 @@ as follows (NOTE: the script has not yet been published on elastic.co):
 curl -fsSL https://elastic.co/start-local | sh
 ```
 
-The script will create a n `elastic-start-local` folder with two files:
+The script will create the`elastic-start-local` folder with two files:
 `docker-compose.yml` and `.env`. The first `docker-compose.yml` is a standard
 docker file containing the configurations for Elasticsearch and Kibana services.
 The second file `.env` contains all the settings, like the Elasticsearch password.
