@@ -418,6 +418,14 @@ echo
 if [ -n "$api_key" ]; then
   echo "🔑 An API key for Elasticsearch has been created (stored in .env):"
   echo $api_key
+  echo
+  echo "ℹ️ Use this API key to connect to Elasticsearch (http://localhost:9200)"
+  echo "Using cURL you can test the connection with the command:"
+  echo "curl http://localhost:9200 -H 'Authorization: ApiKey ${api_key}'"
+else
+  echo "ℹ️ To connect to Elasticsearch use http://localhost:9200"
+  echo "You can use basic authentication with elastic user and ${es_password} password"
+  echo "Or create an API key as reported at https://www.elastic.co/guide/en/kibana/current/api-keys.html"
 fi
-echo "ℹ️ You can use this API key to connect to Elasticsearch with our language clients"
-echo "Learn more at https://www.elastic.co/guide/en/elasticsearch/client"
+echo "Learn more about our SDK at https://www.elastic.co/guide/en/elasticsearch/client"
+
