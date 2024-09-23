@@ -37,13 +37,20 @@ echo 'ℹ️ Do not use this script in a production environment'
 echo
 
 # Version
-version="0.1.1"
+version="0.2.0"
 
+# Folder name for the installation
+installation_folder="elastic-start-local"
+# API key name for Elasticseach
+api_key_name="elastic-start-local"
 # Name of the error log
 error_log="error-start-local.log"
-
 # Minimum version for docker-compose
 min_docker_compose="1.29.0"
+# Elasticsearch container name
+elasticsearch_container_name="es-local-dev"
+# Kibana container name
+kibana_container_name="kibana-local-dev"
 
 # Trap ctrl-c
 trap ctrl_c INT
@@ -186,6 +193,20 @@ create_api_key() {
   fi
 }
 
+# Check if a docker container is runnning
+check_container_running() {
+    local container_name=$1
+    local containers=$(docker ps --format '{{.Names}}')
+    if $(echo "$containers" | grep -q "^${container_name}$"); then
+      echo "The docker container '$container_name' is already running!"
+      echo "You can have only one running at time."
+      echo "To stop the container run the following command:"
+      echo
+      echo "docker stop $container_name"
+      exit 1
+    fi
+}
+
 # Check the requirements
 if ! available "curl"; then
   echo "Error: curl command is required"
@@ -236,14 +257,21 @@ else
 fi
 set -e
 
-# Create the elastic-start-local folder
-folder_name="elastic-start-local"
-folder=$folder_name
-count=1
-while [ -d "$folder" ]; do
-  folder="${folder_name}-${count}"
-  count=$((count+1))
-done
+# Check if elastic-start-local exists
+folder=$installation_folder
+if [ -d "$folder" ]; then
+  echo "It seems you have already a start-local in the directory $folder."
+  echo "I cannot proceed unless you remove it or move to another folder."
+  echo "Before removing the folder remember to delete the docker services."
+  echo "You can use the following commands (data will be destroyed):"
+  echo "cd $folder"
+  echo $docker_clean
+  exit 1
+fi
+
+# Check for docker containers running
+check_container_running "$elasticsearch_container_name"
+check_container_running "$kibana_container_name"
 
 mkdir $folder
 cd $folder
@@ -258,13 +286,12 @@ kibana_encryption_key="$(random_password 32)"
 # Create the .env file
 cat > .env <<- EOM
 ES_LOCAL_VERSION=$es_version
-ES_LOCAL_CONTAINER_NAME=es-local-dev
-ES_LOCAL_DOCKER_NETWORK=elastic-net
+ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_HEAP_INIT=128m
 ES_LOCAL_HEAP_MAX=2g
-KIBANA_LOCAL_CONTAINER_NAME=kibana-local-dev
+KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -366,7 +393,7 @@ fi
 set -e
 
 # Create an API key for Elasticsearch
-api_key=$(create_api_key $es_password $folder_name)
+api_key=$(create_api_key $es_password $api_key_name)
 if [ -n "$api_key" ]; then
   echo "ES_LOCAL_API_KEY=${api_key}" >> .env
 fi
