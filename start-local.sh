@@ -99,11 +99,12 @@ get_os_info() {
 # Check if a command exists
 available() { command -v $1 >/dev/null; }
 
-# Revert the status (remove containers and folder)
+# Revert the status, removeìing containers, volumes, network and folder
 cleanup() {
   if [ -d "./../$folder_to_clean" ]; then
     if [ -f "docker-compose.yml" ]; then
       $docker_clean >/dev/null 2>&1
+      $docker_remove_volumes >/dev/null 2>&1
     fi
     cd ..
     rm -rf ${folder_to_clean}
@@ -236,6 +237,7 @@ if [ $? -ne 0 ]; then
   docker="docker-compose up -d"
   docker_stop="docker-compose stop"
   docker_clean="docker-compose rm -fsv"
+  docker_remove_volumes="docker-compose down -v"
   docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
   if [ $(compare_versions "$docker_version" "$min_docker_compose") = "lt" ]; then
     echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
@@ -246,6 +248,7 @@ if [ $? -ne 0 ]; then
 else
   docker_stop="docker compose stop"
   docker_clean="docker compose rm -fsv"
+  docker_remove_volumes="docker compose down -v"
   docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
   # --wait option has been introduced in 2.1.1+
   if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
