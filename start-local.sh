@@ -291,6 +291,7 @@ cat > .env <<- EOM
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
+ES_LOCAL_URL=http://localhost:9200
 ES_LOCAL_PORT=9200
 ES_LOCAL_HEAP_INIT=128m
 ES_LOCAL_HEAP_MAX=2g

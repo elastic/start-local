@@ -71,6 +71,7 @@ To delete the service and the volumes, you can run the command:
 
 ```bash
 docker compose rm -fsv
+docker compose down -v
 ```
 
 We support also the `docker-compose` command with a dash. In this case,
@@ -80,7 +81,8 @@ you need to use the following commands:
 ```bash
 docker-compose up -d    # start the services
 docker-compose stop     # stop the service
-docker-compose rm -fsv  # delete the services and the volumes
+docker-compose rm -fsv  # delete the services
+docker-compose down -v  # delete the volumes
 ```
 
 ## Logging
