@@ -22,42 +22,36 @@
 # under the License.
 set -eu
 
-echo
-echo '  ______ _           _   _      '
-echo ' |  ____| |         | | (_)     '
-echo ' | |__  | | __ _ ___| |_ _  ___ '
-echo ' |  __| | |/ _` / __| __| |/ __|'
-echo ' | |____| | (_| \__ \ |_| | (__ '
-echo ' |______|_|\__,_|___/\__|_|\___|'
-echo '--------------------------------------------------------'
-echo '🚀 Run Elasticsearch and Kibana for local testing'
-echo '--------------------------------------------------------'
-echo 
-echo 'ℹ️ Do not use this script in a production environment'
-echo
+startup() {
+  echo
+  echo '  ______ _           _   _      '
+  echo ' |  ____| |         | | (_)     '
+  echo ' | |__  | | __ _ ___| |_ _  ___ '
+  echo ' |  __| | |/ _` / __| __| |/ __|'
+  echo ' | |____| | (_| \__ \ |_| | (__ '
+  echo ' |______|_|\__,_|___/\__|_|\___|'
+  echo '--------------------------------------------------------'
+  echo '🚀 Run Elasticsearch and Kibana for local testing'
+  echo '--------------------------------------------------------'
+  echo 
+  echo 'ℹ️ Do not use this script in a production environment'
+  echo
 
-# Version
-version="0.2.0"
+  # Version
+  version="0.2.0"
 
-# Folder name for the installation
-installation_folder="elastic-start-local"
-# API key name for Elasticseach
-api_key_name="elastic-start-local"
-# Name of the error log
-error_log="error-start-local.log"
-# Minimum version for docker-compose
-min_docker_compose="1.29.0"
-# Elasticsearch container name
-elasticsearch_container_name="es-local-dev"
-# Kibana container name
-kibana_container_name="kibana-local-dev"
-
-# Trap ctrl-c
-trap ctrl_c INT
-
-ctrl_c() { 
-  cleanup
-  exit 1
+  # Folder name for the installation
+  installation_folder="elastic-start-local"
+  # API key name for Elasticseach
+  api_key_name="elastic-start-local"
+  # Name of the error log
+  error_log="error-start-local.log"
+  # Minimum version for docker-compose
+  min_docker_compose="1.29.0"
+  # Elasticsearch container name
+  elasticsearch_container_name="es-local-dev"
+  # Kibana container name
+  kibana_container_name="kibana-local-dev"
 }
 
 # Get linux distribution
@@ -112,19 +106,32 @@ cleanup() {
 }
 
 # Generate the error log
+# parameter 1: error message
+# parameter 2: the container names to retrieve, separated by comma
 generate_error_log() {
   local msg=$1
-  if [ -n "${msg}" ]; then
-    echo "${msg}" > "$error_log"
+  local docker_services=$2
+  local error_file="$error_log"
+  if [ -d "./../$folder_to_clean" ]; then
+    error_file="./../$error_log"
   fi
-  echo "Docker engine: $(docker --version)" >> "$error_log" 
-  echo "Docker compose: ${docker_version}" >> "$error_log"
-  echo $(get_os_info) >> "$error_log"
-  echo "An error log has been generated in ${error_log}"
-  echo "If you report this error in https://github.com/elastic/start-local/issues, we'll try to fix it. Thanks!"
+  if [ -n "${msg}" ]; then
+    echo "${msg}" > "$error_file"
+  fi
+  echo "Docker engine: $(docker --version)" >> "$error_file" 
+  echo "Docker compose: ${docker_version}" >> "$error_file"
+  echo $(get_os_info) >> "$error_file"
+  for service in $docker_services; do
+    echo "-- Logs of service ${service}:" >> "$error_file"
+    docker logs "${service}" >> "$error_file" 2> /dev/null
+  done
+  echo "An error log has been generated in ${error_log} file."
+  echo "If you need assistance, open an issue at https://github.com/elastic/start-local/issues"
 }
 
 # Compare versions
+# parameter 1: version to compare
+# parameter 2: version to compare
 compare_versions() {
   local v1=$1
   local v2=$2
@@ -156,10 +163,10 @@ wait_for_kibana() {
   until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
-      error_msg="Error: timeout of ${timeout} sec waiting for Kibana"
+      error_msg="Error: Kibana timeout of ${timeout} sec"
       echo $error_msg
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
       cleanup
-      generate_error_log $error_msg
       exit 1
     fi
     sleep 2
@@ -167,7 +174,7 @@ wait_for_kibana() {
 }
 
 # Generates a random password with letters and numbers
-# You can pass the size of the password as first parameter (default is 8 characters)
+# parameter: size of the password (default is 8 characters)
 random_password() {
   local LENGTH="${1:-8}"
   echo $(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c ${LENGTH})
@@ -181,7 +188,8 @@ get_latest_version() {
 }
 
 # Create an API key for Elasticsearch
-# You need to pass the Elasticsearch password and the name of the key
+# parameter 1: the Elasticsearch password
+# parameter 2: name of the API key to generate
 create_api_key() {
   local es_password=$1
   local name=$2
@@ -194,100 +202,128 @@ create_api_key() {
   fi
 }
 
-# Check if a docker container is runnning
+# Check if a container is runnning
+# parameter: the name of the container
 check_container_running() {
-    local container_name=$1
-    local containers=$(docker ps --format '{{.Names}}')
-    if $(echo "$containers" | grep -q "^${container_name}$"); then
-      echo "The docker container '$container_name' is already running!"
-      echo "You can have only one running at time."
-      echo "To stop the container run the following command:"
-      echo
-      echo "docker stop $container_name"
-      exit 1
-    fi
+  local container_name=$1
+  local containers=$(docker ps --format '{{.Names}}')
+  if $(echo "$containers" | grep -q "^${container_name}$"); then
+    echo "The docker container '$container_name' is already running!"
+    echo "You can have only one running at time."
+    echo "To stop the container run the following command:"
+    echo
+    echo "docker stop $container_name"
+    exit 1
+  fi
 }
 
-# Check the requirements
-if ! available "curl"; then
-  echo "Error: curl command is required"
-  echo "You can install it from https://curl.se/download.html."
-  exit 1
-fi
-if ! available "grep"; then
-  echo "Error: grep command is required"
-  echo "You can install it from https://www.gnu.org/software/grep/."
-  exit 1
-fi
-need_wait_for_kibana=true
-# Check for "docker compose" or "docker-compose"
-set +e
-docker compose >/dev/null 2>&1
-if [ $? -ne 0 ]; then
-  if ! available "docker-compose"; then
-    if ! available "docker"; then
-      echo "Error: docker command is required"
-      echo "You can install it from https://docs.docker.com/engine/install/."
+check_requirements() {
+  # Check the requirements
+  if ! available "curl"; then
+    echo "Error: curl command is required"
+    echo "You can install it from https://curl.se/download.html."
+    exit 1
+  fi
+  if ! available "grep"; then
+    echo "Error: grep command is required"
+    echo "You can install it from https://www.gnu.org/software/grep/."
+    exit 1
+  fi
+  need_wait_for_kibana=true
+  # Check for "docker compose" or "docker-compose"
+  set +e
+  docker compose >/dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    if ! available "docker-compose"; then
+      if ! available "docker"; then
+        echo "Error: docker command is required"
+        echo "You can install it from https://docs.docker.com/engine/install/."
+        exit 1
+      fi
+      echo "Error: docker compose is required"
+      echo "You can install it from https://docs.docker.com/compose/install/"
       exit 1
     fi
-    echo "Error: docker compose is required"
-    echo "You can install it from https://docs.docker.com/compose/install/"
-    exit 1
-  fi
-  docker="docker-compose up -d"
-  docker_stop="docker-compose stop"
-  docker_clean="docker-compose rm -fsv"
-  docker_remove_volumes="docker-compose down -v"
-  docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-  if [ $(compare_versions "$docker_version" "$min_docker_compose") = "lt" ]; then
-    echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
-    echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
-    cleanup
-    exit 1
-  fi 
-else
-  docker_stop="docker compose stop"
-  docker_clean="docker compose rm -fsv"
-  docker_remove_volumes="docker compose down -v"
-  docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-  # --wait option has been introduced in 2.1.1+
-  if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
-    docker="docker compose up --wait"
-    need_wait_for_kibana=false
+    docker="docker-compose up -d"
+    docker_stop="docker-compose stop"
+    docker_clean="docker-compose rm -fsv"
+    docker_remove_volumes="docker-compose down -v"
+    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+    if [ $(compare_versions "$docker_version" "$min_docker_compose") = "lt" ]; then
+      echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
+      echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
+      cleanup
+      exit 1
+    fi 
   else
-    docker="docker compose up -d"
+    docker_stop="docker compose stop"
+    docker_clean="docker compose rm -fsv"
+    docker_remove_volumes="docker compose down -v"
+    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+    # --wait option has been introduced in 2.1.1+
+    if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
+      docker="docker compose up --wait"
+      need_wait_for_kibana=false
+    else
+      docker="docker compose up -d"
+    fi
   fi
-fi
-set -e
+  set -e
+}
 
-# Check if elastic-start-local exists
-folder=$installation_folder
-if [ -d "$folder" ]; then
-  echo "It seems you have already a start-local in the directory $folder."
-  echo "I cannot proceed unless you remove it or move to another folder."
-  echo "Before removing the folder remember to delete the docker services."
-  echo "You can use the following commands (data will be destroyed):"
-  echo "cd $folder"
-  echo $docker_clean
-  exit 1
-fi
+check_installation_folder() {
+  # Check if $installation_folder exists
+  folder=$installation_folder
+  if [ -d "$folder" ]; then
+    if [ -n "$(ls -A "$folder")" ]; then
+      echo "It seems you have already a start-local installation in '${folder}'."
+      if [ -f "$folder/uninstall.sh" ]; then
+        echo "I cannot proceed unless you uninstall it, using the following command:"
+        echo "cd $folder && ./uninstall.sh"
+      else
+        echo "I did not find the uninstall.sh file, you need to proceed manually."
+        if [ -f "$folder/docker-compose.yml" ] && [ -f "$folder/.env" ]; then
+          echo "Execute the following commands:"
+          echo "cd $folder"
+          echo $docker_clean
+          echo $docker_remove_volumes
+          echo "cd .."
+          echo "rm -rf $folder"
+        fi
+        echo "Finally, remove the folder '${folder}' and try again."
+        exit 1
+      fi
+    fi
+  fi
+}
 
-# Check for docker containers running
-check_container_running "$elasticsearch_container_name"
-check_container_running "$kibana_container_name"
+check_docker_services() {
+  # Check for docker containers running
+  check_container_running "$elasticsearch_container_name"
+  check_container_running "$kibana_container_name"
+  check_container_running "kibana_settings"
+}
 
-mkdir $folder
-cd $folder
-folder_to_clean=$folder
+create_installation_folder() {
+  # If $folder already exists, it is empty, see above
+  if [ ! -d "$folder" ]; then 
+    mkdir $folder
+  fi
+  cd $folder
+  folder_to_clean=$folder
+}
 
-# Generate random passwords
-es_password="$(random_password)"
-kibana_password="$(random_password)"
-es_version="$(get_latest_version)"
-kibana_encryption_key="$(random_password 32)"
+generate_passwords_api_keys() {
+  # Generate random passwords
+  es_password="$(random_password)"
+  kibana_password="$(random_password)"
+  es_version="$(get_latest_version)"
+  kibana_encryption_key="$(random_password 32)"
+}
 
-# Create the .env file
-cat > .env <<- EOM
+create_env_file() {
+  # Create the .env file
+  cat > .env <<- EOM
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
@@ -300,9 +336,59 @@ KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
 EOM
+}
 
-# Create the docker-compose-yml file
-cat > docker-compose.yml <<-'EOM'
+create_uninstall_file() {
+# Uninstall script
+cat > uninstall.sh <<-'EOM'
+#!/bin/sh
+# Uninstall script for start-local
+# More information: https://github.com/elastic/start-local
+set -eu
+
+ask_confirmation() {
+    echo "Do you want to continue? (yes/no)"
+    read answer
+    case "$answer" in
+        yes|y|Y|Yes|YES)
+            return 0  # true
+            ;;
+        no|n|N|No|NO)
+            return 1  # false
+            ;;
+        *)
+            echo "Please answer yes or no."
+            ask_confirmation  # Ask again if the input is invalid
+            ;;
+    esac
+}
+
+if [ ! -e "docker-compose.yml" ]; then
+  echo "Error: I cannot find the docker-compose.yml file"
+  echo "I cannot uninstall start-local.
+fi
+if [ ! -e ".env" ]; then
+  echo "Error: I cannot find the .env file"
+  echo "I cannot uninstall start-local.
+fi
+echo "This script will uninstall start-local."
+echo "All data will be deleted and cannot be recovered."
+if ask_confirmation; then
+EOM
+
+cat >> uninstall.sh <<- EOM
+  $docker_clean
+  $docker_remove_volumes
+  rm docker-compose.yml .env uninstall.sh
+  echo "Start-local successfully removed"
+fi
+EOM
+  chmod +x uninstall.sh
+}
+
+create_docker_compose_file() {
+  # Create the docker-compose-yml file
+  cat > docker-compose.yml <<-'EOM'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
@@ -376,60 +462,101 @@ volumes:
   dev-elasticsearch:
   dev-kibana:
 EOM
+}
 
-echo "⌛️Setting up Elasticsearch and Kibana v${es_version}..."
-echo "- Created the ${folder} folder"
-echo "- Generated random passwords"
-echo "- Created a .env file with settings"
-echo "- Created a docker-compose.yml file"
+print_steps() {
+  echo "⌛️Setting up Elasticsearch and Kibana v${es_version}..."
+  echo "- Created the ${folder} folder"
+  echo "- Generated random passwords"
+  echo "- Created a .env file with settings"
+  echo "- Created a docker-compose.yml file"
+}
 
-# Execute docker compose
-echo "- Running ${docker}"
-set +e
-$docker
-if [ $? -ne 0 ]; then
-  error_msg="Error: the ${docker} command failed!"
-  echo $error_msg
-  cleanup
-  generate_error_log $error_msg
-  exit 1
-fi
-set -e
+running_docker_compose() {
+  # Execute docker compose
+  echo "- Running ${docker}"
+  set +e
+  $docker
+  if [ $? -ne 0 ]; then
+    error_msg="Error: ${docker} command failed!"
+    echo $error_msg
+    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
+    cleanup
+    exit 1
+  fi
+  set -e
+}
 
-# Create an API key for Elasticsearch
-api_key=$(create_api_key $es_password $api_key_name)
-if [ -n "$api_key" ]; then
-  echo "ES_LOCAL_API_KEY=${api_key}" >> .env
-fi
+api_key() {
+  # Create an API key for Elasticsearch
+  api_key=$(create_api_key $es_password $api_key_name)
+  if [ -n "$api_key" ]; then
+    echo "ES_LOCAL_API_KEY=${api_key}" >> .env
+  fi
+}
 
-if [ "$need_wait_for_kibana" = true ]; then
-  wait_for_kibana 120
-fi
+kibana_wait() {
+  if [ "$need_wait_for_kibana" = true ]; then
+    wait_for_kibana 120
+  fi
+}
 
-# Success
-echo
-echo "🎉 Congrats, Elasticsearch and Kibana are successfully installed and running!"
-echo
-echo "🌐 Access Kibana at http://localhost:5601"
-echo "Use 'elastic' as username and '${es_password}' as password."
-echo
-echo "🛠️ Configuration details"
-echo "We created the folder '${folder}' containing the following files:"
-echo "  - docker-compose.yml: Use this file to manage the services."
-echo "  - .env: This file contains environment variables and credentials."
-echo "Learn more at https://github.com/elastic/start-local"
-echo
-if [ -n "$api_key" ]; then
-  echo "🔑 An API key for Elasticsearch has been created (stored in .env):"
-  echo $api_key
+success() {
+  # Success
   echo
-  echo "ℹ️ Use this API key to connect to Elasticsearch (http://localhost:9200)"
-  echo "Using cURL you can test the connection with the command:"
-  echo "curl http://localhost:9200 -H 'Authorization: ApiKey ${api_key}'"
-else
-  echo "ℹ️ To connect to Elasticsearch use http://localhost:9200"
-  echo "You can use basic authentication with elastic user and ${es_password} password"
-  echo "Or create an API key as reported at https://www.elastic.co/guide/en/kibana/current/api-keys.html"
-fi
-echo "Learn more about our SDK at https://www.elastic.co/guide/en/elasticsearch/client"
+  echo "🎉 Congrats, Elasticsearch and Kibana are successfully installed and running!"
+  echo
+  echo "🌐 Access Kibana at http://localhost:5601"
+  echo "Use 'elastic' as username and '${es_password}' as password."
+  echo
+  echo "🛠️ Configuration details"
+  echo "We created the folder '${folder}' containing the following files:"
+  echo "  - docker-compose.yml: Use this file to manage the services."
+  echo "  - .env: This file contains environment variables and credentials."
+  echo "Learn more at https://github.com/elastic/start-local"
+  echo
+  if [ -n "$api_key" ]; then
+    echo "🔑 An API key for Elasticsearch has been created (stored in .env):"
+    echo $api_key
+    echo
+    echo "ℹ️ Use this API key to connect to Elasticsearch (http://localhost:9200)"
+    echo "For instance, you can test the connection using curl, as follows:"
+    echo ". ${folder}/.env && curl \$ES_LOCAL_URL -H \"Authorization: ApiKey \${ES_LOCAL_API_KEY}\""
+  else
+    echo "ℹ️ To connect to Elasticsearch use http://localhost:9200"
+    echo "You can use basic or create an API key, as reported at https://www.elastic.co/guide/en/kibana/current/api-keys.html"
+    echo "For instance, you can test the connection using curl, as follows:"
+    echo ". ${folder}/.env && curl -u \"elastic:\$ES_LOCAL_PASSWORD\" \$ES_LOCAL_URL"
+  fi
+  echo
+  echo "Learn more about our SDK at https://www.elastic.co/guide/en/elasticsearch/client"
+}
 
+# Steps of start-local script
+main() {
+  startup
+  check_requirements
+  check_installation_folder
+  check_docker_services
+  create_installation_folder
+  generate_passwords_api_keys
+  create_uninstall_file
+  create_env_file
+  create_docker_compose_file
+  print_steps
+  running_docker_compose
+  api_key
+  kibana_wait
+  success
+}
+
+ctrl_c() { 
+  cleanup
+  exit 1
+}
+
+# Trap ctrl-c
+trap ctrl_c INT
+
+# Execute the script
+main
