@@ -56,7 +56,7 @@ using the following command, inside the `elastic-start-local` folder:
 
 ```bash
 . .env
-curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API}"
+curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
 ```
 
 ## Docker compose
