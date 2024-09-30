@@ -317,7 +317,8 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="$(get_latest_version)"
+  #es_version="$(get_latest_version)"
+  es_version="8.16.0-SNAPSHOT"
   kibana_encryption_key="$(random_password 32)"
 }
 
@@ -448,6 +449,7 @@ services:
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_LOCAL_PASSWORD}
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
+      - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
     healthcheck:
       test:
         [
