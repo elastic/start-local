@@ -36,6 +36,7 @@ function set_up_before_script() {
 function tear_down_after_script() {
     cd ${TEST_DIR}/${DEFAULT_DIR}
     docker compose rm -fsv
+    docker compose down -v
     cd ${SCRIPT_DIR}
     rm -rf ${TEST_DIR}
     cd ${CURRENT_DIR}
