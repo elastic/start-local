@@ -465,7 +465,7 @@ EOM
 }
 
 print_steps() {
-  echo "⌛️Setting up Elasticsearch and Kibana v${es_version}..."
+  echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   echo "- Created the ${folder} folder"
   echo "- Generated random passwords"
   echo "- Created a .env file with settings"
