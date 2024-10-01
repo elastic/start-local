@@ -11,7 +11,7 @@ Run Elasticsearch and Kibana on your local machine using a simple shell script. 
 This script comes with a one-month trial of the Elastic [Platinum](https://www.elastic.co/subscriptions) license.
 After the trial period, the license reverts to [Free and open - Basic](https://www.elastic.co/subscriptions).
 
-- **Platinum License**: Includes features like the [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) semantic retrieval model, the [Elastic Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html) and much more.
+- **Platinum**: Includes features like the [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) semantic retrieval model, the [Elastic Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html) and much more.
 - **Free and open - Basic**: Includes features like [vector search](https://www.elastic.co/what-is/vector-search), [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/current/esql.html) and much more.
 
 For a complete list of subscriptions and features, see our [subscriptions page](https://www.elastic.co/subscriptions).
@@ -23,7 +23,7 @@ For a complete list of subscriptions and features, see our [subscriptions page](
 
 ## 🏃‍♀️‍➡️ Getting started
 
-### Installation
+### Setup
 
 Run the `start-local` script using [curl](https://curl.se/):
 
@@ -35,7 +35,7 @@ This script creates an `elastic-start-local` folder containing:
 - `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
 
-### Post-installation
+### 🌐 Endpoints
 
 After running the script:
 - Elasticsearch will be running at http://localhost:9200
@@ -50,13 +50,11 @@ The script generates a random password for the `elastic` user, displayed at the 
 
 An API key for Elasticsearch is generated and stored in the `.env` file as `ES_LOCAL_API_KEY`. Use this key to connect to Elasticsearch with the [Elastic SDK](https://www.elastic.co/guide/en/elasticsearch/client) or [REST API](https://www.elastic.co/guide/en/elasticsearch/reference/current/rest-apis.html).
 
-> [!TIP]
-> Example: Check the connection to Elasticsearch using curl:
-> 
-> ```bash
-> . .env
-> curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
-> ```
+Check the connection to Elasticsearch using `curl` in the `elastic-start-local` folder:
+
+```bash
+ curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
+```
 
 ## 🐳 Managing Docker services
 
@@ -73,7 +71,7 @@ Go to the `elastic-start-local` folder to manage services using [Docker Compose]
 
 ## 🗑️ Uninstallation
 
-To remove the start-local installation:
+To remove the `start-local` installation:
 
 ```bash
 cd elastic-start-local
