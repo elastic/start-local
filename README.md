@@ -18,8 +18,9 @@ For a complete list of subscriptions and features, see our [subscriptions page](
 
 ## 💻 System requirements
 
+- [Docker](https://www.docker.com/)
 - Works on Linux and macOS
-- Currently not supported on Microsoft Windows 
+- On Microsoft Windows it works using [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ## 🏃‍♀️‍➡️ Getting started
 
@@ -34,6 +35,7 @@ curl -fsSL https://elastic.co/start-local | sh
 This script creates an `elastic-start-local` folder containing:
 - `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
+- `uninstall.sh`: The script to uninstall Elasticsearch and Kibana
 
 ### 🌐 Endpoints
 
@@ -53,7 +55,8 @@ An API key for Elasticsearch is generated and stored in the `.env` file as `ES_L
 Check the connection to Elasticsearch using `curl` in the `elastic-start-local` folder:
 
 ```bash
- curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
+source .env
+curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
 ```
 
 ## 🐳 Managing Docker services
