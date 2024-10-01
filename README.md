@@ -1,115 +1,95 @@
-# Try Elasticsearch and Kibana locally
+# 🚀 Try Elasticsearch and Kibana locally
 
-Try Elasticsearch and Kibana using a simple shell script for local
-development. It uses [docker](https://www.docker.com/) to install
-the services and offers a trial [Platinum](https://www.elastic.co/subscriptions)
-license for 1 month. After the month the license will become
-[Free and Open Basic](https://www.elastic.co/subscriptions).
+Run Elasticsearch and Kibana on your local machine using a simple shell script. This setup uses [Docker](https://www.docker.com/) behind the scenes to install and run the services.
 
-For instance, the Platinum version offers [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) retrieval model and the [Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html).
-The Free and Open Basic includes the [vector search](https://www.elastic.co/what-is/vector-search) 
-and [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/current/esql.html).
-For a full list of subscription and features [read this page](https://www.elastic.co/subscriptions).
+> [!IMPORTANT]  
+> This script is for local testing only. Do not use it in production!
+> For production installations refer to the official documentation for [Elasticsearch](https://www.elastic.co/downloads/elasticsearch) and [Kibana](https://www.elastic.co/downloads/kibana).
 
-This script can be executed only on Linux and Mac environments.
-We do not support Microsoft Windows at the moment.
+## 🌟 Features
 
-**Please note**: this script is only for local testing, do not
-run it in a production environment!
+This script comes with a one-month trial of the Elastic [Platinum](https://www.elastic.co/subscriptions) license.
+After the trial period, the license reverts to [Free and open - Basic](https://www.elastic.co/subscriptions).
 
-For production installation please reference to the [official documentation](https://www.elastic.co/downloads/elasticsearch).
-For Kibana, [this is the page](https://www.elastic.co/downloads/kibana) to read.
+- **Platinum License**: Includes features like the [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) semantic retrieval model, the [Elastic Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html) and much more.
+- **Free and open - Basic**: Includes features like [vector search](https://www.elastic.co/what-is/vector-search), [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/current/esql.html) and much more.
 
-## How to execute the script
+For a complete list of subscriptions and features, see our [subscriptions page](https://www.elastic.co/subscriptions).
 
-The **start-local** script has been designed to be executed using [curl](https://curl.se/),
-as follows (NOTE: the script has not yet been published on elastic.co):
+## 💻 System requirements
+
+- Works on Linux and macOS
+- Currently not supported on Microsoft Windows 
+
+## 🏃‍♀️‍➡️ Getting started
+
+### Installation
+
+Run the `start-local` script using [curl](https://curl.se/):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh
 ```
 
-The script will create the`elastic-start-local` folder with two files:
-`docker-compose.yml` and `.env`. The first `docker-compose.yml` is a standard
-docker file containing the configurations for Elasticsearch and Kibana services.
-The second file `.env` contains all the settings, like the Elasticsearch password.
+This script creates an `elastic-start-local` folder containing:
+- `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
+- `.env`: Environment settings, including the Elasticsearch password
 
-## After the execution
+### Post-installation
 
-After executing the start-local script you will have Elasticsearch
-running on http://localhost:9200 and Kibana on http://localhost:5601.
+After running the script:
+- Elasticsearch will be running at http://localhost:9200
+- Kibana will be running at http://localhost:5601
 
-The script generates a random password for the `elastic` user. The password
-is displayed at the end of the installation and stored in the `.env` file.
+The script generates a random password for the `elastic` user, displayed at the end of the installation and stored in the `.env` file.
 
-We disabled HTTPS and we used Basic acces authentication to connect to Elasticsearch.
-This configuration should be used only for local testing.
-For security reason, Elasticsearch and Kibana are accessible only using localhost.
+> [!CAUTION]
+> HTTPS is disabled, and Basic authentication is used for Elasticsearch. This configuration is for local testing only. For security, Elasticsearch and Kibana are accessible only via `localhost`.
 
-We also generated an API key for Elasticsearch, this can be useful to connect
-to Elasticsearch using the [Elastic SDK](https://www.elastic.co/guide/en/elasticsearch/client)
-or directly with [REST API](https://www.elastic.co/guide/en/elasticsearch/reference/current/rest-apis.html). 
-The API key is stored in the `.env` file with the key `ES_LOCAL_API_KEY`.
+### 🔑 API key
 
-For instance, using [curl](https://curl.se/), you can check the connection to Elasticsearch
-using the following command, inside the `elastic-start-local` folder:
+An API key for Elasticsearch is generated and stored in the `.env` file as `ES_LOCAL_API_KEY`. Use this key to connect to Elasticsearch with the [Elastic SDK](https://www.elastic.co/guide/en/elasticsearch/client) or [REST API](https://www.elastic.co/guide/en/elasticsearch/reference/current/rest-apis.html).
 
-```bash
-. .env
-curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
-```
+> [!TIP]
+> Example: Check the connection to Elasticsearch using curl:
+> 
+> ```bash
+> . .env
+> curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
+> ```
 
-## Docker compose
+## 🐳 Managing Docker services
 
-If you navigate to the `elastic-start-local` folder, you can manage the services
-using [docker compose](https://docs.docker.com/reference/cli/docker/compose/) command.
+Go to the `elastic-start-local` folder to manage services using [Docker Compose](https://docs.docker.com/reference/cli/docker/compose/).
 
-For instance, to restart the services, you can run the command:
+### Common commands
 
-```bash
-docker compose up --wait
-```
-To stop the services you can run the command:
+- Restart services: `docker compose up --wait`
+- Stop services: `docker compose stop`
 
-```bash
-docker compose stop
-```
+> [!NOTE]
+> For older versions of Docker Compose:
+> - Start services: `docker-compose up -d`
 
-If you are using `docker-compose` instead of `docker compose` the syntax
-is the same, apart for the `up --wait` option which may not be available.
-In this case you can use the following command, to start the services:
+## 🗑️ Uninstallation
 
-```bash
-docker-compose up -d
-```
-
-## Uninstall
-
-We provided a `uninstall.sh` script for removing the installation
-of start-local.
-
-You can just run this script. Please note, this will erase all data
-without the possibility of recovery.
+To remove the start-local installation:
 
 ```bash
 cd elastic-start-local
 ./uninstall.sh
 ```
 
-## Logging
+> [!WARNING]  
+> This erases all data permanently.
 
-In case of failure, the start-local generates a log error in the file
-`error-start-local.log`.
+## 📝 Logging
 
-This file contains the logs generated by Elasticsearch and Kibana using the
-[docker logs](https://docs.docker.com/reference/cli/docker/container/logs/) command.
+If the installation fails, an error log is created in `error-start-local.log`. This file contains logs from Elasticsearch and Kibana, captured using the [docker logs](https://docs.docker.com/reference/cli/docker/container/logs/) command.
 
-## How to change the settings
+## ⚙️ Customizing settings
 
-If you want to change the settings, for instance the Elasticsearch password,
-you can edit the `.env` file and change the values.
-
-The `.env` file contains some settings like as follows:
+To change settings (e.g., Elasticsearch password), edit the `.env` file. Example contents:
 
 ```bash
 ES_LOCAL_VERSION=8.15.2
@@ -124,45 +104,34 @@ KIBANA_LOCAL_PASSWORD=YJFbhLJL
 ES_LOCAL_API_KEY=df34grtk...==
 ```
 
-For instance, `ES_LOCAL_VERSION` is the Elasticsearch and Kibana version used
-for the installation (e.g. 8.15.2).
+> [!IMPORTANT]
+> After changing the `.env` file, restart the services:
+> ```bash
+> docker compose restart
+> ```
+> 
+> Or for older versions:
+> ```bash
+> docker-compose restart
+> ```
 
-After changing the `.env` file you need to restart the services using the command:
+## 🧪 Testing the installer
 
-```bash
-docker compose restart
-```
+We use [bashunit](https://bashunit.typeddevs.com/) to test the script. Tests are in the `/tests` folder.
 
-If you are using `docker-compose` the command will be:
+### Running tests
 
-```bash
-docker-compose restart
-```
+1. Install bashunit:
+   ```bash
+   curl -s https://bashunit.typeddevs.com/install.sh | bash
+   ```
 
-## Testing the installer
+2. Run tests:
+   ```bash
+   lib/bashunit
+   ```
 
-We used [bashunit](https://bashunit.typeddevs.com/) for testing the script.
+The tests run `start-local.sh` and check if Elasticsearch and Kibana are working.
 
-The tests are in the `/tests` folder.
-
-To run the tests you need first to install bashunit as follows:
-
-```bash
-curl -s https://bashunit.typeddevs.com/install.sh | bash
-```
-
-This command will create a `lib` folder with the `bashunit`
-command. 
-
-You can now execute the tests using the following command:
-
-```bash
-lib/bashunit
-```
-
-The tests execute the `start-local.sh` and check if Elasticsearch
-and Kibana are running. 
-
-We also executed a local web server to test the installation
-using a pipeline from an URL. To test this you need to have [PHP](https://www.php.net/)
-installed.
+> [!NOTE]
+> For URL pipeline testing, a local web server is used. This requires [PHP](https://www.php.net/).
