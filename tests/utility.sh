@@ -67,3 +67,14 @@ function cap () { tee ${1}/capture.out; }
 
 # Return the previous output
 function ret () { cat ${1}/capture.out; }
+
+# Check if a docker service is running
+check_docker_service_running() {
+  local container_name=$1
+  local containers=$(docker ps --format '{{.Names}}')
+  if $(echo "$containers" | grep -q "^${container_name}$"); then
+    return 0 # true
+  else
+    return 1 # false
+  fi
+}
