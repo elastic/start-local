@@ -515,7 +515,7 @@ success() {
   echo "   Password: ${es_password}"
   echo
 
-  echo "🔌 API endpoint: http://localhost:9200"
+  echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
     echo
