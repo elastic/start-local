@@ -30,11 +30,11 @@ startup() {
   echo ' |  __| | |/ _` / __| __| |/ __|'
   echo ' | |____| | (_| \__ \ |_| | (__ '
   echo ' |______|_|\__,_|___/\__|_|\___|'
-  echo '--------------------------------------------------------'
+  echo '-------------------------------------------------'
   echo '🚀 Run Elasticsearch and Kibana for local testing'
-  echo '--------------------------------------------------------'
+  echo '-------------------------------------------------'
   echo 
-  echo 'ℹ️ Do not use this script in a production environment'
+  echo 'ℹ️  Do not use this script in a production environment'
   echo
 
   # Version
@@ -467,6 +467,7 @@ EOM
 
 print_steps() {
   echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
+  echo
   echo "- Created the ${folder} folder"
   echo "- Generated random passwords"
   echo "- Created a .env file with settings"
@@ -476,6 +477,7 @@ print_steps() {
 running_docker_compose() {
   # Execute docker compose
   echo "- Running ${docker}"
+  echo
   set +e
   $docker
   if [ $? -ne 0 ]; then
@@ -503,37 +505,31 @@ kibana_wait() {
 }
 
 success() {
-  # Success
   echo
-  echo "🎉 Congrats, Elasticsearch and Kibana are successfully installed and running!"
+  echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
   echo
-  echo "🌐 Access Kibana at http://localhost:5601"
-  echo "Use 'elastic' as username and '${es_password}' as password."
+
+  echo "🌐 Open your browser at http://localhost:5601"
   echo
-  echo "🛠️ Configuration details"
-  echo "We created the folder '${folder}' containing the following files:"
-  echo "  - docker-compose.yml: Use this file to manage the services."
-  echo "  - .env: This file contains environment variables and credentials."
-  echo "Learn more at https://github.com/elastic/start-local"
+  echo "   Username: elastic"
+  echo "   Password: ${es_password}"
   echo
+
+  echo "🔌 API endpoint: http://localhost:9200"
   if [ -n "$api_key" ]; then
-    echo "🔑 An API key for Elasticsearch has been created (stored in .env):"
-    echo $api_key
+    echo "🔑 API key: $api_key"
     echo
-    echo "ℹ️ Use this API key to connect to Elasticsearch (http://localhost:9200)"
-    echo "For instance, you can test the connection using curl, as follows:"
-    echo ". ${folder}/.env && curl \$ES_LOCAL_URL -H \"Authorization: ApiKey \${ES_LOCAL_API_KEY}\""
   else
-    echo "ℹ️ To connect to Elasticsearch use http://localhost:9200"
-    echo "You can use basic or create an API key, as reported at https://www.elastic.co/guide/en/kibana/current/api-keys.html"
-    echo "For instance, you can test the connection using curl, as follows:"
-    echo ". ${folder}/.env && curl -u \"elastic:\$ES_LOCAL_PASSWORD\" \$ES_LOCAL_URL"
+    echo "🔑 Use basic auth or create an API key"
+    echo "https://www.elastic.co/guide/en/kibana/current/api-keys.html"
+    echo
   fi
   echo
-  echo "Learn more about our SDK at https://www.elastic.co/guide/en/elasticsearch/client"
+  echo "Learn more at https://github.com/elastic/start-local"
+
+  echo
 }
 
-# Steps of start-local script
 main() {
   startup
   check_requirements
