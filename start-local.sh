@@ -42,7 +42,7 @@ startup() {
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
-  # API key name for Elasticseach
+  # API key name for Elasticsearch
   api_key_name="elastic-start-local"
   # Name of the error log
   error_log="error-start-local.log"
