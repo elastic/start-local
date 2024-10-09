@@ -93,7 +93,7 @@ get_os_info() {
 # Check if a command exists
 available() { command -v $1 >/dev/null; }
 
-# Revert the status, removeìing containers, volumes, network and folder
+# Revert the status, removing containers, volumes, network and folder
 cleanup() {
   if [ -d "./../$folder_to_clean" ]; then
     if [ -f "docker-compose.yml" ]; then
