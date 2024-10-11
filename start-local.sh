@@ -346,14 +346,7 @@ cat > uninstall.sh <<-'EOM'
 # More information: https://github.com/elastic/start-local
 set -eu
 
-check_directory() {
-    current_dir=$(basename "$PWD" 2>/dev/null)
-    if [ "$current_dir" != "elastic-start-local" ]; then
-      echo "Error: You are not in the elastic-start-local directory."
-      echo "Please navigate to the correct directory and try again."
-      exit 1
-    fi
-}
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 ask_confirmation() {
     echo "Do you want to continue? (yes/no)"
@@ -372,8 +365,7 @@ ask_confirmation() {
     esac
 }
 
-check_directory
-
+cd ${SCRIPT_DIR}
 if [ ! -e "docker-compose.yml" ]; then
   echo "Error: I cannot find the docker-compose.yml file"
   echo "I cannot uninstall start-local.
