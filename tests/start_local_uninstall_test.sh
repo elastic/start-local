@@ -24,7 +24,7 @@ DEFAULT_DIR="elastic-start-local"
 # include external scripts
 source "tests/utility.sh"
 
-function set_up_before_script() {
+function set_up() {
     mkdir ${TEST_DIR}
     cd ${TEST_DIR}
     cp ${SCRIPT_DIR}/../start-local.sh ${TEST_DIR}
@@ -33,7 +33,7 @@ function set_up_before_script() {
     cd ${CURRENT_DIR}
 }
 
-function tear_down_after_script() {
+function tear_down() {
     cd ${TEST_DIR}/${DEFAULT_DIR}
     docker compose rm -fsv
     docker compose down -v
@@ -42,7 +42,16 @@ function tear_down_after_script() {
     cd ${CURRENT_DIR}
 }
 
-function test_uninstall() {
+function test_uninstall_outside_installation_folder() {
+    cd ${TEST_DIR}
+    yes | ./${DEFAULT_DIR}/uninstall.sh
+    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
+    assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
+    assert_is_directory_empty ${TEST_DIR}/${DEFAULT_DIR}
+}
+
+function test_uninstall_in_installation_folder() {
     cd ${TEST_DIR}/${DEFAULT_DIR}
     yes | ./uninstall.sh
     assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
