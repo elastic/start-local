@@ -35,7 +35,7 @@ curl -fsSL https://elastic.co/start-local | sh
 This script creates an `elastic-start-local` folder containing:
 - `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
-- `start.sh` and `stop.sh`: The scripts to start and stop Elasticsearch and Kibana
+- `start.sh` and `stop.sh`: Scripts to start and stop Elasticsearch and Kibana
 - `uninstall.sh`: The script to uninstall Elasticsearch and Kibana
 
 ### 🌐 Endpoints
