@@ -532,11 +532,11 @@ EOM
 print_steps() {
   echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   echo
-  echo "- Created the ${folder} folder"
   echo "- Generated random passwords"
-  echo "- Created a .env file with settings"
-  echo "- Created a docker-compose.yml file"
-  echo "- Created start/stop/uninstall commands"
+  echo "- Created the ${folder} folder containing the files:"
+  echo "  - .env, with settings"
+  echo "  - docker-compose.yml, for Docker services"
+  echo "  - start/stop/uninstall commands"
 }
 
 running_docker_compose() {
