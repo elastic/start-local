@@ -71,7 +71,7 @@ cd elastic-start-local
 ./stop.sh
 ```
 
-If you want to **start** the services, just execute the `start` command, as follows:
+To **start** the Elasticsearch and Kibana Docker services, use the `start` command:
 
 ```bash
 cd elastic-start-local
