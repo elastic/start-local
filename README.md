@@ -64,7 +64,7 @@ curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
 
 You can use the `start` and `stop` commands available in the `elastic-start-local` folder.
 
-If you want to **stop** the Docker services of Elasticsearch and Kibana, just use the `stop` command, as follows:
+To **stop** the Elasticsearch and Kibana Docker services, use the `stop` command:
 
 ```bash
 cd elastic-start-local
