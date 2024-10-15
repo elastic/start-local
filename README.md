@@ -35,6 +35,7 @@ curl -fsSL https://elastic.co/start-local | sh
 This script creates an `elastic-start-local` folder containing:
 - `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
+- `start.sh` and `stop.sh`: Scripts to start and stop Elasticsearch and Kibana
 - `uninstall.sh`: The script to uninstall Elasticsearch and Kibana
 
 ### 🌐 Endpoints
@@ -59,18 +60,25 @@ source .env
 curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
 ```
 
-## 🐳 Managing Docker services
+## 🐳 Start and stop the services
 
-Go to the `elastic-start-local` folder to manage services using [Docker Compose](https://docs.docker.com/reference/cli/docker/compose/).
+You can use the `start` and `stop` commands available in the `elastic-start-local` folder.
 
-### Common commands
+To **stop** the Elasticsearch and Kibana Docker services, use the `stop` command:
 
-- Restart services: `docker compose up --wait`
-- Stop services: `docker compose stop`
+```bash
+cd elastic-start-local
+./stop.sh
+```
 
-> [!NOTE]
-> For older versions of Docker Compose:
-> - Start services: `docker-compose up -d`
+To **start** the Elasticsearch and Kibana Docker services, use the `start` command:
+
+```bash
+cd elastic-start-local
+./start.sh
+```
+
+[Docker Compose](https://docs.docker.com/reference/cli/docker/compose/).
 
 ## 🗑️ Uninstallation
 
@@ -106,14 +114,11 @@ ES_LOCAL_API_KEY=df34grtk...==
 ```
 
 > [!IMPORTANT]
-> After changing the `.env` file, restart the services:
+> After changing the `.env` file, restart the services using `stop` and `start`:
 > ```bash
-> docker compose restart
-> ```
-> 
-> Or for older versions:
-> ```bash
-> docker-compose restart
+> cd elastic-start-local
+> ./stop.sh
+> ./start.sh
 > ```
 
 ## 🧪 Testing the installer

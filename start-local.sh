@@ -338,9 +338,70 @@ KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
 EOM
 }
 
+# Create the start script (start.sh)
+create_start_file() {
+  cat > start.sh <<-'EOM'
+#!/bin/sh
+# Start script for start-local
+# More information: https://github.com/elastic/start-local
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd ${SCRIPT_DIR}
+
+EOM
+  if [ "$need_wait_for_kibana" = true ]; then
+    cat >> start.sh <<-'EOM'
+wait_for_kibana() {
+  local timeout="${1:-60}"
+  echo "- Waiting for Kibana to be ready"
+  echo
+  local start_time="$(date +%s)"
+  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
+    elapsed_time="$(($(date +%s) - start_time))"
+    if [ "$elapsed_time" -ge "$timeout" ]; then
+      echo "Error: Kibana timeout of ${timeout} sec"
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
+EOM
+  fi
+  cat >> start.sh <<- EOM
+$docker
+EOM
+  if [ "$need_wait_for_kibana" = true ]; then
+    cat >> start.sh <<-'EOM'
+wait_for_kibana 120
+EOM
+  fi
+  chmod +x start.sh
+}
+
+# Create the stop script (stop.sh)
+create_stop_file() {
+  cat > stop.sh <<-'EOM'
+#!/bin/sh
+# Stop script for start-local
+# More information: https://github.com/elastic/start-local
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd ${SCRIPT_DIR}
+EOM
+
+  cat >> stop.sh <<- EOM
+$docker_stop
+EOM
+  chmod +x stop.sh
+}
+
+# Create the uninstall script (uninstall.sh)
 create_uninstall_file() {
-# Uninstall script
-cat > uninstall.sh <<-'EOM'
+
+  cat > uninstall.sh <<-'EOM'
 #!/bin/sh
 # Uninstall script for start-local
 # More information: https://github.com/elastic/start-local
@@ -379,10 +440,10 @@ echo "All data will be deleted and cannot be recovered."
 if ask_confirmation; then
 EOM
 
-cat >> uninstall.sh <<- EOM
+  cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh
+  rm docker-compose.yml .env uninstall.sh start.sh stop.sh
   echo "Start-local successfully removed"
 fi
 EOM
@@ -471,10 +532,11 @@ EOM
 print_steps() {
   echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   echo
-  echo "- Created the ${folder} folder"
   echo "- Generated random passwords"
-  echo "- Created a .env file with settings"
-  echo "- Created a docker-compose.yml file"
+  echo "- Created the ${folder} folder containing the files:"
+  echo "  - .env, with settings"
+  echo "  - docker-compose.yml, for Docker services"
+  echo "  - start/stop/uninstall commands"
 }
 
 running_docker_compose() {
@@ -540,6 +602,8 @@ main() {
   check_docker_services
   create_installation_folder
   generate_passwords_api_keys
+  create_start_file
+  create_stop_file
   create_uninstall_file
   create_env_file
   create_docker_compose_file
