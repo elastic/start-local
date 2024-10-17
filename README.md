@@ -8,10 +8,10 @@ Run Elasticsearch and Kibana on your local machine using a simple shell script. 
 
 ## 🌟 Features
 
-This script comes with a one-month trial of the Elastic [Platinum](https://www.elastic.co/subscriptions) license.
+This script comes with a one-month trial license.
 After the trial period, the license reverts to [Free and open - Basic](https://www.elastic.co/subscriptions).
 
-- **Platinum**: Includes features like the [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html) semantic retrieval model, the [Elastic Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html) and much more.
+- **Trial**: Includes **All** features like the [Playground](https://www.elastic.co/docs/current/serverless/elasticsearch/playground), [ELSER](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html), [semantic retrieval model](https://www.elastic.co/guide/en/machine-learning/8.15/ml-nlp-text-emb-vector-search-example.html), the [Elastic Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html) and much more.
 - **Free and open - Basic**: Includes features like [vector search](https://www.elastic.co/what-is/vector-search), [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/current/esql.html) and much more.
 
 For a complete list of subscriptions and features, see our [subscriptions page](https://www.elastic.co/subscriptions).
