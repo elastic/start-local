@@ -378,8 +378,9 @@ EOM
   cat >> start.sh <<- EOM
 if [ ! -n "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   echo "---------------------------------------------------------------------"
-  echo "The trial period has expired, you can continue with the Basic license"
-  echo "or ask to extend the trial for another 30-day using this form:"
+  echo "The one-month trial period has expired. You can continue using the"
+  echo "Free and open Basic license or request to extend the trial for"
+  echo "another 30 days using this form:"
   echo "https://www.elastic.co/trialextension"
   echo "---------------------------------------------------------------------"
   echo "For more info about the license: https://www.elastic.co/subscriptions"
