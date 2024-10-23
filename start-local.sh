@@ -180,13 +180,6 @@ random_password() {
   echo $(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c ${LENGTH})
 }
 
-# Returns the latest Elasticsearch tag version
-get_latest_version() {
-  local tags="$(curl -s "https://api.github.com/repos/elastic/elasticsearch/tags")"
-  local latest="$(echo "$tags" | grep -m 1 '"name"' | grep -Eo '[0-9.]+')"
-  echo $latest
-}
-
 # Create an API key for Elasticsearch
 # parameter 1: the Elasticsearch password
 # parameter 2: name of the API key to generate
@@ -317,7 +310,7 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="$(get_latest_version)"
+  es_version="8.15.3"
   kibana_encryption_key="$(random_password 32)"
 }
 
