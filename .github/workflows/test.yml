@@ -28,6 +28,11 @@ jobs:
       with:
         php-version: '8.3'
 
+    - name: Cache Docker images
+      uses: ScribeMD/docker-cache@0.5.0
+      with:
+        key: docker-${{ runner.os }}-${{ hashFiles('start-local.sh') }}
+        
     - name: Run the tests
       run: |
         ./lib/bashunit
