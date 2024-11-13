@@ -18,6 +18,7 @@ For a complete list of subscriptions and features, see our [subscriptions page](
 
 ## 💻 System requirements
 
+- 5 GB of available disk space
 - [Docker](https://www.docker.com/)
 - Works on Linux and macOS
 - On Microsoft Windows it works using [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install)

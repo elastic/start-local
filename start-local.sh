@@ -52,6 +52,8 @@ startup() {
   elasticsearch_container_name="es-local-dev"
   # Kibana container name
   kibana_container_name="kibana-local-dev"
+  # Minimum disk space required for docker images + services (in GB)
+  min_disk_space_required=5
 }
 
 # Get linux distribution
@@ -210,8 +212,20 @@ check_container_running() {
   fi
 }
 
+# Check the available disk space in GB
+# parameter: required size in GB
+check_disk_space_gb() {
+  local required=$1
+  local available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
+  if [ $available_gb -lt $required ]; then
+    echo "Error: only ${available_gb} GB of disk space available; ${required} GB required for the installation"
+    exit 1
+  fi
+}
+
 check_requirements() {
   # Check the requirements
+  check_disk_space_gb ${min_disk_space_required}
   if ! available "curl"; then
     echo "Error: curl command is required"
     echo "You can install it from https://curl.se/download.html."
@@ -324,6 +338,7 @@ ES_LOCAL_URL=http://localhost:9200
 ES_LOCAL_PORT=9200
 ES_LOCAL_HEAP_INIT=128m
 ES_LOCAL_HEAP_MAX=2g
+ES_LOCAL_DISK_SPACE_REQUIRED=1gb
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
@@ -347,6 +362,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd ${SCRIPT_DIR}
 today=$(date +%s)
 . ./.env
+# Check disk space
+available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
+required=$(echo "${ES_LOCAL_DISK_SPACE_REQUIRED}" | grep -Eo '[0-9]+')
+if [ $available_gb -lt $required ]; then
+  echo "----------------------------------------------------------------------------"
+  echo "WARNING: Disk space is below the ${required} GB limit. Elasticsearch will be"
+  echo "executed in read-only mode. Please free up disk space to resolve this issue."
+  echo "----------------------------------------------------------------------------"
+  echo "Press ENTER to confirm."
+  read answer
+fi
 EOM
   if [ "$need_wait_for_kibana" = true ]; then
     cat >> start.sh <<-'EOM'
@@ -494,6 +520,9 @@ services:
       - xpack.license.self_generated.type=trial
       - xpack.ml.use_auto_machine_memory_percent=true
       - ES_JAVA_OPTS=-Xms${ES_LOCAL_HEAP_INIT} -Xmx${ES_LOCAL_HEAP_MAX}
+      - cluster.routing.allocation.disk.watermark.low=${ES_LOCAL_DISK_SPACE_REQUIRED}
+      - cluster.routing.allocation.disk.watermark.high=${ES_LOCAL_DISK_SPACE_REQUIRED}
+      - cluster.routing.allocation.disk.watermark.flood_stage=${ES_LOCAL_DISK_SPACE_REQUIRED}
     ulimits:
       memlock:
         soft: -1
@@ -518,7 +547,9 @@ services:
     command: >
       bash -c '
         echo "Setup the kibana_system password";
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:${ES_LOCAL_PORT}/_security/user/kibana_system/_password -d "{\"password\":\"'${KIBANA_LOCAL_PASSWORD}'\"}" -H "Content-Type: application/json" | grep -q "^{}"; do sleep 5; done;
+        start_time=$(date +%s);
+        timeout=60;
+        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:${ES_LOCAL_PORT}/_security/user/kibana_system/_password -d "{\"password\":\"'${KIBANA_LOCAL_PASSWORD}'\"}" -H "Content-Type: application/json" | grep -q "^{}"; do if [ $(($(date +%s) - $$start_time)) -ge $$timeout ]; then echo "Error: Elasticsearch timeout"; exit 1; fi; sleep 2; done;
       '
 
   kibana:
