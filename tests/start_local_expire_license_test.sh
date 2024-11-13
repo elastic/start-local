@@ -47,8 +47,8 @@ function test_start_with_expired_license() {
     license=$(get_elasticsearch_license)
     assert_equals "$license" "trial"
     
-    # Change the expire dat in start.sh
-    sed -i -E "0,/[0-9]{9}/s/[0-9]{10}/1/" ${TEST_DIR}/${DEFAULT_DIR}/start.sh
+    # Change the expire date in start.sh
+    sed -i -E 's/-gt [0-9]+/-gt 1/' ${TEST_DIR}/${DEFAULT_DIR}/start.sh
     ${TEST_DIR}/${DEFAULT_DIR}/start.sh
 
     # Check license is basic
