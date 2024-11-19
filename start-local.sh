@@ -480,11 +480,11 @@ ask_confirmation() {
 cd ${SCRIPT_DIR}
 if [ ! -e "docker-compose.yml" ]; then
   echo "Error: I cannot find the docker-compose.yml file"
-  echo "I cannot uninstall start-local.
+  echo "I cannot uninstall start-local."
 fi
 if [ ! -e ".env" ]; then
   echo "Error: I cannot find the .env file"
-  echo "I cannot uninstall start-local.
+  echo "I cannot uninstall start-local."
 fi
 echo "This script will uninstall start-local."
 echo "All data will be deleted and cannot be recovered."
