@@ -34,6 +34,7 @@ curl -fsSL https://elastic.co/start-local | sh
 ```
 
 This script creates an `elastic-start-local` folder containing:
+
 - `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
 - `start.sh` and `stop.sh`: Scripts to start and stop Elasticsearch and Kibana
@@ -42,8 +43,9 @@ This script creates an `elastic-start-local` folder containing:
 ### 🌐 Endpoints
 
 After running the script:
-- Elasticsearch will be running at http://localhost:9200
-- Kibana will be running at http://localhost:5601
+
+- Elasticsearch will be running at <http://localhost:9200>
+- Kibana will be running at <http://localhost:5601>
 
 The script generates a random password for the `elastic` user, displayed at the end of the installation and stored in the `.env` file.
 
@@ -116,6 +118,7 @@ ES_LOCAL_API_KEY=df34grtk...==
 
 > [!IMPORTANT]
 > After changing the `.env` file, restart the services using `stop` and `start`:
+>
 > ```bash
 > cd elastic-start-local
 > ./stop.sh
@@ -129,11 +132,13 @@ We use [bashunit](https://bashunit.typeddevs.com/) to test the script. Tests are
 ### Running tests
 
 1. Install bashunit:
+
    ```bash
    curl -s https://bashunit.typeddevs.com/install.sh | bash
    ```
 
 2. Run tests:
+
    ```bash
    lib/bashunit
    ```
