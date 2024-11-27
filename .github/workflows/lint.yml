@@ -1,0 +1,66 @@
+name: CI
+
+on: # yamllint disable-line rule:truthy
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint
+        uses: reviewdog/action-shellcheck@v1
+        with:
+          reporter: github-pr-check
+          filter_mode: nofilter
+          reviewdog_flags: '-fail-level=any'
+
+  markdownlint:
+    name: MarkdownLint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint
+        uses: reviewdog/action-markdownlint@v0
+        with:
+          reporter: github-pr-check
+          filter_mode: nofilter
+          reviewdog_flags: '-fail-level=any'
+
+  yamllint:
+    name: YamlLint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint
+        uses: reviewdog/action-yamllint@v1
+        with:
+          reporter: github-pr-check
+          filter_mode: nofilter
+          reviewdog_flags: '-fail-level=any'
+
+  actionlint:
+    name: ActionLint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint
+        uses: reviewdog/action-actionlint@v1
+        with:
+          reporter: github-pr-check
+          filter_mode: nofilter
+          reviewdog_flags: '-fail-level=any'
