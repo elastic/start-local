@@ -38,7 +38,7 @@ startup() {
   echo
 
   # Version
-  version="0.4.1"
+  version="0.5.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -324,7 +324,7 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="8.16.0"
+  es_version="8.17.0"
   kibana_encryption_key="$(random_password 32)"
 }
 
