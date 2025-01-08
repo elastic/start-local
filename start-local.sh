@@ -75,25 +75,27 @@ get_os_info() {
   elif [ -f /etc/redhat-release ]; then
       # For Red Hat-based distributions
       echo "Distribution: $(cat /etc/redhat-release)"
-  elif [[ "$OSTYPE" == "darwin"* ]]; then
-      # macOS detection
-      echo "Distribution: macOS"
-      echo "Version: $(sw_vers -productVersion)"
-  elif [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-      # Windows detection in environments like Git Bash, Cygwin, or MinGW
-      echo "Distribution: Windows"
-      echo "Version: $(cmd.exe /c ver | tr -d '\r')"
-  elif [[ "$OSTYPE" == "linux-gnu" && "$(uname -r)" == *"Microsoft"* ]]; then
-      # Windows Subsystem for Linux (WSL) detection
-      echo "Distribution: Windows (WSL)"
-      echo "Version: $(uname -r)"
+  elif [ -n "${OSTYPE+x}" ]; then
+    if [ "${OSTYPE#darwin}" != "$OSTYPE" ]; then
+        # macOS detection
+        echo "Distribution: macOS"
+        echo "Version: $(sw_vers -productVersion)"
+    elif [ "$OSTYPE" = "cygwin" ] || [ "$OSTYPE" = "msys" ] || [ "$OSTYPE" = "win32" ]; then
+        # Windows detection in environments like Git Bash, Cygwin, or MinGW
+        echo "Distribution: Windows"
+        echo "Version: $(cmd.exe /c ver | tr -d '\r')"
+    elif [ "$OSTYPE" = "linux-gnu" ] && uname -r | grep -q "Microsoft"; then
+        # Windows Subsystem for Linux (WSL) detection
+        echo "Distribution: Windows (WSL)"
+        echo "Version: $(uname -r)"
+    fi
   else
       echo "Unknown operating system"
   fi
 }
 
 # Check if a command exists
-available() { command -v $1 >/dev/null; }
+available() { command -v "$1" >/dev/null; }
 
 # Revert the status, removing containers, volumes, network and folder
 cleanup() {
@@ -103,7 +105,7 @@ cleanup() {
       $docker_remove_volumes >/dev/null 2>&1
     fi
     cd ..
-    rm -rf ${folder_to_clean}
+    rm -rf "${folder_to_clean}"
   fi
 }
 
@@ -111,18 +113,21 @@ cleanup() {
 # parameter 1: error message
 # parameter 2: the container names to retrieve, separated by comma
 generate_error_log() {
-  local msg=$1
-  local docker_services=$2
-  local error_file="$error_log"
+  msg="$1"
+  docker_services="$2"
+  error_file="$error_log"
   if [ -d "./../$folder_to_clean" ]; then
     error_file="./../$error_log"
   fi
   if [ -n "${msg}" ]; then
     echo "${msg}" > "$error_file"
   fi
-  echo "Docker engine: $(docker --version)" >> "$error_file" 
-  echo "Docker compose: ${docker_version}" >> "$error_file"
-  echo $(get_os_info) >> "$error_file"
+  { 
+    echo "Start-local version: ${version}"
+    echo "Docker engine: $(docker --version)"
+    echo "Docker compose: ${docker_version}"
+    get_os_info
+  } >> "$error_file" 
   for service in $docker_services; do
     echo "-- Logs of service ${service}:" >> "$error_file"
     docker logs "${service}" >> "$error_file" 2> /dev/null
@@ -135,12 +140,12 @@ generate_error_log() {
 # parameter 1: version to compare
 # parameter 2: version to compare
 compare_versions() {
-  local v1=$1
-  local v2=$2
+  v1=$1
+  v2=$2
 
   original_ifs="$IFS"  
-  IFS='.'; set -- $v1; v1_major=$1; v1_minor=$2; v1_patch=$3
-  IFS='.'; set -- $v2; v2_major=$1; v2_minor=$2; v2_patch=$3
+  IFS='.'; set -- "$v1"; v1_major="$1"; v1_minor="$2"; v1_patch="$3"
+  IFS='.'; set -- "$v2"; v2_major="$1"; v2_minor="$2"; v2_patch="$3"
   IFS="$original_ifs"
 
   [ "$v1_major" -lt "$v2_major" ] && echo "lt" && return 0
@@ -158,15 +163,15 @@ compare_versions() {
 # Wait for availability of Kibana
 # parameter: timeout in seconds
 wait_for_kibana() {
-  local timeout="${1:-60}"
+  timeout="${1:-60}"
   echo "- Waiting for Kibana to be ready"
   echo
-  local start_time="$(date +%s)"
+  start_time="$(date +%s)"
   until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
-      echo $error_msg
+      echo "$error_msg"
       generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
       cleanup
       exit 1
@@ -178,31 +183,31 @@ wait_for_kibana() {
 # Generates a random password with letters and numbers
 # parameter: size of the password (default is 8 characters)
 random_password() {
-  local LENGTH="${1:-8}"
-  echo $(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c ${LENGTH})
+  LENGTH="${1:-8}"
+  LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${LENGTH}"
 }
 
 # Create an API key for Elasticsearch
 # parameter 1: the Elasticsearch password
 # parameter 2: name of the API key to generate
 create_api_key() {
-  local es_password=$1
-  local name=$2
-  local response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
+  es_password=$1
+  name=$2
+  response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
   if [ -z "$response" ]; then
     echo ""
   else
-    local api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
-    echo $api_key
+    api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
+    echo "$api_key"
   fi
 }
 
 # Check if a container is runnning
 # parameter: the name of the container
 check_container_running() {
-  local container_name=$1
-  local containers=$(docker ps --format '{{.Names}}')
-  if $(echo "$containers" | grep -q "^${container_name}$"); then
+  container_name=$1
+  containers=$(docker ps --format '{{.Names}}')
+  if echo "$containers" | grep -q "^${container_name}$"; then
     echo "The docker container '$container_name' is already running!"
     echo "You can have only one running at time."
     echo "To stop the container run the following command:"
@@ -215,9 +220,9 @@ check_container_running() {
 # Check the available disk space in GB
 # parameter: required size in GB
 check_disk_space_gb() {
-  local required=$1
-  local available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
-  if [ $available_gb -lt $required ]; then
+  required=$1
+  available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
+  if [ "$available_gb" -lt "$required" ]; then
     echo "Error: only ${available_gb} GB of disk space available; ${required} GB required for the installation"
     exit 1
   fi
@@ -239,8 +244,7 @@ check_requirements() {
   need_wait_for_kibana=true
   # Check for "docker compose" or "docker-compose"
   set +e
-  docker compose >/dev/null 2>&1
-  if [ $? -ne 0 ]; then
+  if ! docker compose >/dev/null 2>&1; then
     if ! available "docker-compose"; then
       if ! available "docker"; then
         echo "Error: docker command is required"
@@ -256,7 +260,7 @@ check_requirements() {
     docker_clean="docker-compose rm -fsv"
     docker_remove_volumes="docker-compose down -v"
     docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    if [ $(compare_versions "$docker_version" "$min_docker_compose") = "lt" ]; then
+    if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
       echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
       echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
       cleanup
@@ -292,8 +296,8 @@ check_installation_folder() {
         if [ -f "$folder/docker-compose.yml" ] && [ -f "$folder/.env" ]; then
           echo "Execute the following commands:"
           echo "cd $folder"
-          echo $docker_clean
-          echo $docker_remove_volumes
+          echo "$docker_clean"
+          echo "$docker_remove_volumes"
           echo "cd .."
           echo "rm -rf $folder"
         fi
@@ -349,8 +353,8 @@ EOM
 # Create the start script (start.sh)
 # including the license update if trial expired
 create_start_file() {
-  local today=$(date +%s)
-  local expire=$((today + 3600*24*30))
+  today=$(date +%s)
+  expire=$((today + 3600*24*30))
 
   cat > start.sh <<-'EOM'
 #!/bin/sh
@@ -600,10 +604,9 @@ running_docker_compose() {
   echo "- Running ${docker}"
   echo
   set +e
-  $docker
-  if [ $? -ne 0 ]; then
+  if ! $docker; then
     error_msg="Error: ${docker} command failed!"
-    echo $error_msg
+    echo "$error_msg"
     generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
     cleanup
     exit 1
@@ -613,7 +616,7 @@ running_docker_compose() {
 
 api_key() {
   # Create an API key for Elasticsearch
-  api_key=$(create_api_key $es_password $api_key_name)
+  api_key=$(create_api_key "$es_password" "$api_key_name")
   if [ -n "$api_key" ]; then
     echo "ES_LOCAL_API_KEY=${api_key}" >> .env
   fi
