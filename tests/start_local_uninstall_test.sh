@@ -18,44 +18,47 @@
 
 CURRENT_DIR=$(pwd) 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+START_LOCAL_PATH="${SCRIPT_DIR}/../start-local.sh"
 TEST_DIR="${SCRIPT_DIR}/test-start-local"
 DEFAULT_DIR="elastic-start-local"
+ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
 
 # include external scripts
 source "tests/utility.sh"
 
 function set_up() {
-    mkdir ${TEST_DIR}
-    cd ${TEST_DIR}
-    cp ${SCRIPT_DIR}/../start-local.sh ${TEST_DIR}
-    sh ${TEST_DIR}/start-local.sh
-    source ${TEST_DIR}/${DEFAULT_DIR}/.env
-    cd ${CURRENT_DIR}
+    mkdir "${TEST_DIR}"
+    cd "${TEST_DIR}" || exit
+    cp "${START_LOCAL_PATH}" "${TEST_DIR}"
+    sh "${TEST_DIR}/start-local.sh"
+    # shellcheck disable=SC1090
+    source "${ENV_PATH}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down() {
-    cd ${TEST_DIR}/${DEFAULT_DIR}
+    cd "${TEST_DIR}/${DEFAULT_DIR}" || exit
     docker compose rm -fsv
     docker compose down -v
-    cd ${SCRIPT_DIR}
-    rm -rf ${TEST_DIR}
-    cd ${CURRENT_DIR}
+    cd "${SCRIPT_DIR}" || exit
+    rm -rf "${TEST_DIR}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function test_uninstall_outside_installation_folder() {
-    cd ${TEST_DIR}
-    yes | ./${DEFAULT_DIR}/uninstall.sh
+    cd "${TEST_DIR}" || exit
+    yes | "./${DEFAULT_DIR}/uninstall.sh"
     assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
-    assert_is_directory_empty ${TEST_DIR}/${DEFAULT_DIR}
+    assert_is_directory_empty "${TEST_DIR}/${DEFAULT_DIR}"
 }
 
 function test_uninstall_in_installation_folder() {
-    cd ${TEST_DIR}/${DEFAULT_DIR}
+    cd "${TEST_DIR}/${DEFAULT_DIR}" || exit
     yes | ./uninstall.sh
     assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
-    assert_is_directory_empty ${TEST_DIR}/${DEFAULT_DIR}
+    assert_is_directory_empty "${TEST_DIR}/${DEFAULT_DIR}"
 }

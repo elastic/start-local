@@ -18,28 +18,31 @@
 
 CURRENT_DIR=$(pwd) 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+START_LOCAL_PATH="${SCRIPT_DIR}/../start-local.sh"
 TEST_DIR="${SCRIPT_DIR}/test-start-local"
 DEFAULT_DIR="elastic-start-local"
+ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
 
 # include external scripts
 source "tests/utility.sh"
 
 function set_up_before_script() {
-    mkdir ${TEST_DIR}
-    cd ${TEST_DIR}
-    cp ${SCRIPT_DIR}/../start-local.sh ${TEST_DIR}
-    sh ${TEST_DIR}/start-local.sh
-    source ${TEST_DIR}/${DEFAULT_DIR}/.env
-    cd ${CURRENT_DIR}
+    mkdir "${TEST_DIR}"
+    cd "${TEST_DIR}" || exit
+    cp "${START_LOCAL_PATH}" "${TEST_DIR}"
+    sh "${TEST_DIR}/start-local.sh"
+    # shellcheck disable=SC1090
+    source "${ENV_PATH}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down_after_script() {
-    cd ${TEST_DIR}/${DEFAULT_DIR}
+    cd "${TEST_DIR}/${DEFAULT_DIR}" || exit
     docker compose rm -fsv
     docker compose down -v
-    cd ${SCRIPT_DIR}
-    rm -rf ${TEST_DIR}
-    cd ${CURRENT_DIR}
+    cd "${SCRIPT_DIR}" || exit
+    rm -rf "${TEST_DIR}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function test_start_with_expired_license() {
@@ -48,8 +51,8 @@ function test_start_with_expired_license() {
     assert_equals "$license" "trial"
     
     # Change the expire date in start.sh
-    sed -i -E 's/-gt [0-9]+/-gt 1/' ${TEST_DIR}/${DEFAULT_DIR}/start.sh
-    ${TEST_DIR}/${DEFAULT_DIR}/start.sh
+    sed -i -E 's/-gt [0-9]+/-gt 1/' "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
+    "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
 
     # Check license is basic
     license=$(get_elasticsearch_license)
@@ -57,6 +60,7 @@ function test_start_with_expired_license() {
 }
 
 function get_elasticsearch_license() {
-    local response=$(curl -X GET $ES_LOCAL_URL/_license -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}")
+    local response
+    response=$(curl -X GET "$ES_LOCAL_URL/_license" -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}")
     echo "$response" | jq -r '.license.type'
 }

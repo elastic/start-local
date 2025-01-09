@@ -18,49 +18,52 @@
 
 CURRENT_DIR=$(pwd) 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+START_LOCAL_PATH="${SCRIPT_DIR}/../start-local.sh"
 TEST_DIR="${SCRIPT_DIR}/test-start-local"
 DEFAULT_DIR="elastic-start-local"
+ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
 
 # include external scripts
 source "tests/utility.sh"
 
 function set_up_before_script() {
-    mkdir ${TEST_DIR}
-    cd ${TEST_DIR}
-    cp ${SCRIPT_DIR}/../start-local.sh ${TEST_DIR}
-    sh ${TEST_DIR}/start-local.sh
-    source ${TEST_DIR}/${DEFAULT_DIR}/.env
-    cd ${CURRENT_DIR}
+    mkdir "${TEST_DIR}"
+    cd "${TEST_DIR}" || exit
+    cp "${START_LOCAL_PATH}" "${TEST_DIR}"
+    sh "${TEST_DIR}/start-local.sh"
+    # shellcheck disable=SC1090
+    source "${ENV_PATH}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down_after_script() {
-    cd ${TEST_DIR}/${DEFAULT_DIR}
+    cd "${TEST_DIR}/${DEFAULT_DIR}" || return
     docker-compose rm -fsv
     docker-compose down -v
-    cd ${SCRIPT_DIR}
-    rm -rf ${TEST_DIR}
-    cd ${CURRENT_DIR}
+    cd "${SCRIPT_DIR}" || exit
+    rm -rf "${TEST_DIR}"
+    cd "${CURRENT_DIR}" || exit
 }
 
 function test_docker_compose_file_exists() {
-    assert_file_exists ${TEST_DIR}/${DEFAULT_DIR}/docker-compose.yml
+    assert_file_exists "${TEST_DIR}/${DEFAULT_DIR}/docker-compose.yml"
 }
 
 function test_env_file_exists() {
-    assert_file_exists ${TEST_DIR}/${DEFAULT_DIR}/.env
+    assert_file_exists "${TEST_DIR}/${DEFAULT_DIR}/.env"
 }
 
 function test_elasticsearch_is_running() {  
     result=$(get_http_response_code "http://localhost:9200" "elastic" "${ES_LOCAL_PASSWORD}")
-    assert_equals "200" $result
+    assert_equals "200" "$result"
 }
 
 function test_kibana_is_running() {  
     result=$(get_http_response_code "http://localhost:5601")
-    assert_equals "200" $result
+    assert_equals "200" "$result"
 }
 
 function test_login_to_kibana() {
     result=$(login_kibana "http://localhost:5601" "elastic" "${ES_LOCAL_PASSWORD}")
-    assert_equals "200" $result
+    assert_equals "200" "$result"
 }
