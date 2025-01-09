@@ -143,9 +143,13 @@ compare_versions() {
   v1=$1
   v2=$2
 
-  original_ifs="$IFS"  
-  IFS='.'; set -- "$v1"; v1_major="$1"; v1_minor="$2"; v1_patch="$3"
-  IFS='.'; set -- "$v2"; v2_major="$1"; v2_minor="$2"; v2_patch="$3"
+  original_ifs="$IFS"
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v1; v1_major=${1:-0}; v1_minor=${2:-0}; v1_patch=${3:-0}
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v2; v2_major=${1:-0}; v2_minor=${2:-0}; v2_patch=${3:-0}
   IFS="$original_ifs"
 
   [ "$v1_major" -lt "$v2_major" ] && echo "lt" && return 0
@@ -363,19 +367,19 @@ create_start_file() {
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd ${SCRIPT_DIR}
+cd "${SCRIPT_DIR}"
 today=$(date +%s)
 . ./.env
 # Check disk space
 available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
 required=$(echo "${ES_LOCAL_DISK_SPACE_REQUIRED}" | grep -Eo '[0-9]+')
-if [ $available_gb -lt $required ]; then
+if [ "$available_gb" -lt "$required" ]; then
   echo "----------------------------------------------------------------------------"
   echo "WARNING: Disk space is below the ${required} GB limit. Elasticsearch will be"
   echo "executed in read-only mode. Please free up disk space to resolve this issue."
   echo "----------------------------------------------------------------------------"
   echo "Press ENTER to confirm."
-  read answer
+  read -r
 fi
 EOM
   if [ "$need_wait_for_kibana" = true ]; then
@@ -399,7 +403,7 @@ EOM
   fi
 
   cat >> start.sh <<- EOM
-if [ ! -n "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
+if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   echo "---------------------------------------------------------------------"
   echo "The one-month trial period has expired. You can continue using the"
   echo "Free and open Basic license or request to extend the trial for"
@@ -444,7 +448,7 @@ create_stop_file() {
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd ${SCRIPT_DIR}
+cd "${SCRIPT_DIR}"
 EOM
 
   cat >> stop.sh <<- EOM
@@ -466,7 +470,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 ask_confirmation() {
     echo "Do you want to continue? (yes/no)"
-    read answer
+    read -r answer
     case "$answer" in
         yes|y|Y|Yes|YES)
             return 0  # true
@@ -481,7 +485,7 @@ ask_confirmation() {
     esac
 }
 
-cd ${SCRIPT_DIR}
+cd "${SCRIPT_DIR}"
 if [ ! -e "docker-compose.yml" ]; then
   echo "Error: I cannot find the docker-compose.yml file"
   echo "I cannot uninstall start-local."
