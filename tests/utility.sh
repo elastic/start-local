@@ -28,12 +28,12 @@ function get_http_response_code() {
     password=$3
 
     if [ -z "$username" ] || [ -z "$password" ]; then
-        result=$(curl -LI $url -o /dev/null -w '%{http_code}\n' -s)
+        result=$(curl -LI "$url" -o /dev/null -w '%{http_code}\n' -s)
     else
-        result=$(curl -LI -u $username:$password $url -o /dev/null -w '%{http_code}\n' -s)
+        result=$(curl -LI -u "$username":"$password" "$url" -o /dev/null -w '%{http_code}\n' -s)
     fi
 
-    echo $result
+    echo "$result"
 }
 
 # Login to Kibana using username and password 
@@ -54,25 +54,26 @@ function login_kibana() {
     result=$(curl -X POST \
         -H "Content-Type: application/json" \
         -H "kbn-xsrf: reporting" \
-        -d '{"providerType":"basic","providerName":"basic","currentURL":"'$url'/login?next=%2F","params":{"username":"'$username'","password":"'$password'"}}' \
+        -d '{"providerType":"basic","providerName":"basic","currentURL":"'"$url"'/login?next=%2F","params":{"username":"'"$username"'","password":"'"$password"'"}}' \
         "${url}/internal/security/login" \
         -o /dev/null \
         -w '%{http_code}\n' -s)
 
-    echo $result
+    echo "$result"
 }
 
 # Tee the output in a file
-function cap () { tee ${1}/capture.out; }
+function cap () { tee "${1}/capture.out"; }
 
 # Return the previous output
-function ret () { cat ${1}/capture.out; }
+function ret () { cat "${1}/capture.out"; }
 
 # Check if a docker service is running
 check_docker_service_running() {
   local container_name=$1
-  local containers=$(docker ps --format '{{.Names}}')
-  if $(echo "$containers" | grep -q "^${container_name}$"); then
+  local containers
+  containers=$(docker ps --format '{{.Names}}')
+  if echo "$containers" | grep -q "^${container_name}$"; then
     return 0 # true
   else
     return 1 # false
