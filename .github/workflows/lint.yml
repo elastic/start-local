@@ -3,6 +3,10 @@ name: CI
 on: # yamllint disable-line rule:truthy
   pull_request:
     types: [opened, synchronize, reopened]
+  push:
+    paths-ignore:
+      - 'README.md'
+      - '.editorconfig'
 
 jobs:
   shellcheck:

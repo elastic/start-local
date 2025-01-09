@@ -1,7 +1,12 @@
 name: Installer test
 
-on: [push, pull_request]
-
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    paths-ignore:
+      - 'README.md'
+      - '.editorconfig'
 env:
   START_LOCAL_URL: "http://localhost:8080/start-local"
 
