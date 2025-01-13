@@ -23,9 +23,8 @@ jobs:
     steps:
     - name: Install docker
       run: |
-        brew install docker docker-compose colima
-        rm -rf ~/.colima
-        colima start
+        brew install colima
+        brew services start colima
         sudo docker version
 
     - name: Checkout
