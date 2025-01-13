@@ -24,8 +24,8 @@ jobs:
     - name: Install docker
       run: |
         brew install docker docker-compose colima
-        colima delete
-        colima start --arch aarch64
+        rm -rf ~/.colima
+        colima start
         sudo docker version
 
     - name: Checkout
