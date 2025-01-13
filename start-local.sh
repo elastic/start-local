@@ -56,6 +56,16 @@ startup() {
   min_disk_space_required=5
 }
 
+# Check for ARM64 architecture
+is_arm64() {
+  arch="$(uname -m)"
+  if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+    return 0 # Return 0 (true)
+  else
+    return 1 # Return 1 (false)
+  fi
+}
+
 # Get linux distribution
 get_os_info() {
   if [ -f /etc/os-release ]; then
@@ -531,6 +541,16 @@ services:
       - cluster.routing.allocation.disk.watermark.low=${ES_LOCAL_DISK_SPACE_REQUIRED}
       - cluster.routing.allocation.disk.watermark.high=${ES_LOCAL_DISK_SPACE_REQUIRED}
       - cluster.routing.allocation.disk.watermark.flood_stage=${ES_LOCAL_DISK_SPACE_REQUIRED}
+EOM
+  
+  # Fix for JDK AArch64 issue, see https://bugs.openjdk.org/browse/JDK-8345296
+  if is_arm64; then
+  cat >> docker-compose.yml <<-'EOM'
+      - "_JAVA_OPTIONS=-XX:UseSVE=0"
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     ulimits:
       memlock:
         soft: -1
