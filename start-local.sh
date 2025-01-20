@@ -220,7 +220,7 @@ create_api_key() {
 # parameter: the name of the container
 check_container_running() {
   container_name=$1
-  containers=$(docker ps --format '{{.Names}}')
+  containers="$(docker ps --format '{{.Names}}')"
   if echo "$containers" | grep -q "^${container_name}$"; then
     echo "The docker container '$container_name' is already running!"
     echo "You can have only one running at time."
