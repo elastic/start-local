@@ -38,7 +38,7 @@ startup() {
   echo
 
   # Version
-  version="0.5.1"
+  version="0.6.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -315,9 +315,8 @@ check_installation_folder() {
           echo "cd .."
           echo "rm -rf $folder"
         fi
-        echo "Finally, remove the folder '${folder}' and try again."
-        exit 1
       fi
+      exit 1
     fi
   fi
 }
@@ -342,7 +341,7 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="8.17.0"
+  es_version="8.17.1"
   kibana_encryption_key="$(random_password 32)"
 }
 
