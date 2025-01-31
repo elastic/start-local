@@ -66,6 +66,20 @@ is_arm64() {
   fi
 }
 
+# Alternative to sort -V, which is not available in BSD-based systems (e.g., macOS)
+version_sort() {
+    awk -F'.' '
+    {
+        printf("%d %d %d %s\n", $1, $2, $3, $0)
+    }' | sort -n -k1,1 -k2,2 -k3,3 | awk '{print $4}'
+}
+
+# Get the latest version of Elasticsearch
+get_latest_version() {
+  versions="$(curl -s "https://artifacts.elastic.co/releases/stack.json")"
+  echo "$versions" | awk -F'"' '/"version": *"/ {print $4}' | version_sort | tail -n 1
+}
+
 # Get linux distribution
 get_os_info() {
   if [ -f /etc/os-release ]; then
@@ -341,7 +355,7 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="8.17.1"
+  es_version="$(get_latest_version)"
   kibana_encryption_key="$(random_password 32)"
 }
 
