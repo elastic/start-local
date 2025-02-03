@@ -68,16 +68,38 @@ is_arm64() {
 
 # Alternative to sort -V, which is not available in BSD-based systems (e.g., macOS)
 version_sort() {
-    awk -F'.' '
-    {
-        printf("%d %d %d %s\n", $1, $2, $3, $0)
-    }' | sort -n -k1,1 -k2,2 -k3,3 | awk '{print $4}'
+  awk -F'.' '
+  {
+      printf("%d %d %d %s\n", $1, $2, $3, $0)
+  }' | sort -n -k1,1 -k2,2 -k3,3 | awk '{print $4}'
 }
 
-# Get the latest version of Elasticsearch
+# Function to check if the format is a valid semantic version (major.minor.patch)
+is_valid_version() {
+  echo "$1" | grep -E -q '^[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+# Get the latest stable version of Elasticsearch
+# Note: It removes all the beta or candidate releases from the list
+# but includes the GA releases (e.g. new major)
 get_latest_version() {
   versions="$(curl -s "https://artifacts.elastic.co/releases/stack.json")"
-  echo "$versions" | awk -F'"' '/"version": *"/ {print $4}' | version_sort | tail -n 1
+  latest_version=$(echo "$versions" | awk -F'"' '/"version": *"/ {print $4}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+( GA)?$' | version_sort | tail -n 1)
+  # Remove the GA prefix from the version, if present
+  latest_version=$(echo "$latest_version" | awk '{ gsub(/ GA$/, "", $0); print }')
+
+  # Check if the latest version is empty
+  if [ -z "$latest_version" ]; then
+    echo "Error: the latest Elasticsearch version is empty"
+    exit 1
+  fi
+  # Check if the latest version is valid
+  if ! is_valid_version "$latest_version"; then
+    echo "Error: {$latest_version} is not a valid Elasticsearch stable version"
+    exit 1
+  fi
+
+  echo "$latest_version"
 }
 
 # Get linux distribution
@@ -355,8 +377,9 @@ generate_passwords_api_keys() {
   # Generate random passwords
   es_password="$(random_password)"
   kibana_password="$(random_password)"
-  es_version="$(get_latest_version)"
   kibana_encryption_key="$(random_password 32)"
+  # Get the latest Elasticsearch version
+  es_version="$(get_latest_version)"
 }
 
 create_env_file() {
