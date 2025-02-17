@@ -38,7 +38,7 @@ startup() {
   echo
 
   # Version
-  version="0.6.0"
+  version="0.7.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -102,6 +102,29 @@ get_latest_version() {
   echo "$latest_version"
 }
 
+# Detect if running on LXC container
+detect_lxc() {
+    # Check /proc/1/environ for LXC container identifier
+    if grep -qa "container=lxc" /proc/1/environ 2>/dev/null; then
+      return 0
+    fi
+    # Check /proc/self/cgroup for LXC references
+    if grep -q "lxc" /proc/self/cgroup 2>/dev/null; then
+      return 0
+    fi
+    # Check for LXC in /sys/fs/cgroup
+    if grep -q "lxc" /sys/fs/cgroup/* 2>/dev/null; then  
+      return 0
+    fi
+    # Use systemd-detect-virt if available
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+      if [ "$(systemd-detect-virt)" = "lxc" ]; then
+        return 0
+      fi
+    fi
+    return 1
+}
+
 # Get linux distribution
 get_os_info() {
   if [ -f /etc/os-release ]; then
@@ -137,6 +160,14 @@ get_os_info() {
     fi
   else
       echo "Unknown operating system"
+  fi
+  if [ -f /proc/version ]; then
+    # Check if running on WSL2 or WSL1 for Microsoft
+    if grep -q "WSL2" /proc/version; then
+      echo "Running on WSL2"
+    elif grep -q "microsoft" /proc/version; then
+      echo "Running on WSL1"
+    fi
   fi
 }
 
@@ -586,20 +617,26 @@ EOM
 EOM
   fi
 
+  # Fix for OCI issue on LXC, see https://github.com/elastic/start-local/issues/27
+  if ! detect_lxc; then
   cat >> docker-compose.yml <<-'EOM'
     ulimits:
       memlock:
         soft: -1
         hard: -1
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     healthcheck:
       test:
         [
           "CMD-SHELL",
           "curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:${ES_LOCAL_PORT}",
         ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      interval: 10s
+      timeout: 10s
+      retries: 30
 
   kibana_settings:
     depends_on:
@@ -647,7 +684,7 @@ EOM
         ]
       interval: 10s
       timeout: 10s
-      retries: 20
+      retries: 30
 
 volumes:
   dev-elasticsearch:
