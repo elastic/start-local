@@ -35,7 +35,7 @@ function tear_down() {
 }
 
 function test_uninstall_outside_installation_folder() {
-    yes | "${DEFAULT_DIR}/uninstall.sh"
+    yes | "${UNINSTALL_FILE}"
     assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
