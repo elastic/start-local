@@ -16,33 +16,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-CURRENT_DIR=$(pwd) 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-START_LOCAL_PATH="${SCRIPT_DIR}/../start-local.sh"
-TEST_DIR="${SCRIPT_DIR}/test-start-local"
-DEFAULT_DIR="elastic-start-local"
-ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
+CURRENT_DIR=$(pwd)
+DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
+ENV_PATH="${DEFAULT_DIR}/.env"
 
 # include external scripts
-source "tests/utility.sh"
+source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    mkdir "${TEST_DIR}"
-    cd "${TEST_DIR}" || exit
-    cp "${START_LOCAL_PATH}" "${TEST_DIR}"
-    sh "${TEST_DIR}/start-local.sh"
+    sh "start-local.sh"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
-    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down_after_script() {
-    cd "${TEST_DIR}/${DEFAULT_DIR}" || exit
-    docker compose rm -fsv
-    docker compose down -v
-    cd "${SCRIPT_DIR}" || exit
-    rm -rf "${TEST_DIR}"
-    cd "${CURRENT_DIR}" || exit
+    yes | "${DEFAULT_DIR}/uninstall.sh"
+    rm -rf "${DEFAULT_DIR}"
 }
 
 function test_start_with_expired_license() {
@@ -51,8 +40,8 @@ function test_start_with_expired_license() {
     assert_equals "$license" "trial"
     
     # Change the expire date in start.sh
-    sed -i -E 's/-gt [0-9]+/-gt 1/' "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
-    "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
+    sed -i -E 's/-gt [0-9]+/-gt 1/' "${DEFAULT_DIR}/start.sh"
+    "${DEFAULT_DIR}/start.sh"
 
     # Check license is basic
     license=$(get_elasticsearch_license)

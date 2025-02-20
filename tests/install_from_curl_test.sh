@@ -16,41 +16,51 @@
 # specific language governing permissions and limitations
 # under the License.
 
-CURRENT_DIR=$(pwd) 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-START_LOCAL_PATH="${SCRIPT_DIR}/../start-local.sh"
-TEST_DIR="${SCRIPT_DIR}/test-start-local"
-DEFAULT_DIR="elastic-start-local"
-ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
+CURRENT_DIR=$(pwd)
+DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
+ENV_PATH="${DEFAULT_DIR}/.env"
+DOCKER_COMPOSE_FILE="${DEFAULT_DIR}/docker-compose.yml"
+START_FILE="${DEFAULT_DIR}/start.sh"
+STOP_FILE="${DEFAULT_DIR}/stop.sh"
+UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 
 # include external scripts
-source "tests/utility.sh"
+source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    mkdir "${TEST_DIR}"
-    cd "${TEST_DIR}" || exit
-    cp "${START_LOCAL_PATH}" "${TEST_DIR}"
-    sh "${TEST_DIR}/start-local.sh"
+    php -S 0.0.0.0:8080 &
+    PHP_SERVER_PID=$!
+    sleep 2
+    curl -fsSL http://localhost:8080/start-local.sh | sh
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
-    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down_after_script() {
-    cd "${TEST_DIR}/${DEFAULT_DIR}" || return
-    docker-compose rm -fsv
-    docker-compose down -v
-    cd "${SCRIPT_DIR}" || exit
-    rm -rf "${TEST_DIR}"
-    cd "${CURRENT_DIR}" || exit
+    yes | "${DEFAULT_DIR}/uninstall.sh"
+    rm -rf "${DEFAULT_DIR}"
+    kill -9 "$PHP_SERVER_PID"
+    wait "$PHP_SERVER_PID" 2>/dev/null
 }
 
 function test_docker_compose_file_exists() {
-    assert_file_exists "${TEST_DIR}/${DEFAULT_DIR}/docker-compose.yml"
+    assert_file_exists "${DOCKER_COMPOSE_FILE}"
 }
 
 function test_env_file_exists() {
-    assert_file_exists "${TEST_DIR}/${DEFAULT_DIR}/.env"
+    assert_file_exists "${ENV_PATH}"
+}
+
+function test_start_file_exists() {
+    assert_file_exists "${START_FILE}"
+}
+
+function test_stop_file_exists() {
+    assert_file_exists "${STOP_FILE}"
+}
+
+function test_uninstall_file_exists() {
+    assert_file_exists "${UNINSTALL_FILE}"
 }
 
 function test_elasticsearch_is_running() {  

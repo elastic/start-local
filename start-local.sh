@@ -22,6 +22,45 @@
 # under the License.
 set -eu
 
+parse_args() {
+  # Parse the script parameters
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -v)
+        # Check that there is another argument for the version
+        if [ $# -lt 2 ]; then
+          echo "Error: -v requires a version value (eg. -v 8.17.0)"
+          exit 1
+        fi
+        es_version="$2"
+        shift 2
+        ;;
+
+      -esonly)
+        esonly=true
+        shift
+        ;;
+
+      --)
+        # End of options; shift and exit the loop
+        shift
+        break
+        ;;
+
+      -*)
+        # Unknown or unsupported option
+        echo "Error: Unknown option '$1'"
+        exit 1
+        ;;
+
+      *)
+        # We've hit a non-option argument; stop parsing options
+        break
+        ;;
+    esac
+  done
+}
+
 startup() {
   echo
   echo '  ______ _           _   _      '
@@ -404,13 +443,20 @@ create_installation_folder() {
   folder_to_clean=$folder
 }
 
-generate_passwords_api_keys() {
+generate_passwords() {
   # Generate random passwords
   es_password="$(random_password)"
-  kibana_password="$(random_password)"
-  kibana_encryption_key="$(random_password 32)"
-  # Get the latest Elasticsearch version
-  es_version="$(get_latest_version)"
+  if  [ -z "${esonly:-}" ]; then
+    kibana_password="$(random_password)"
+    kibana_encryption_key="$(random_password 32)"
+  fi
+}
+
+choose_es_version() {
+  if [ -z "${es_version:-}" ]; then
+    # Get the latest Elasticsearch version
+    es_version="$(get_latest_version)"
+  fi
 }
 
 create_env_file() {
@@ -424,11 +470,16 @@ ES_LOCAL_PORT=9200
 ES_LOCAL_HEAP_INIT=128m
 ES_LOCAL_HEAP_MAX=2g
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
+EOM
+
+  if  [ -z "${esonly:-}" ]; then
+    cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
 EOM
+  fi
 }
 
 # Create the start script (start.sh)
@@ -638,6 +689,10 @@ EOM
       timeout: 10s
       retries: 30
 
+EOM
+
+if  [ -z "${esonly:-}" ]; then
+  cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
       elasticsearch:
@@ -686,14 +741,27 @@ EOM
       timeout: 10s
       retries: 30
 
+EOM
+fi
+
+  cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
+EOM
+
+if  [ -z "${esonly:-}" ]; then
+  cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
 EOM
+fi
 }
 
 print_steps() {
-  echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
+  if  [ -z "${esonly:-}" ]; then
+    echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
+  else
+    echo "⌛️ Setting up Elasticsearch v${es_version}..."
+  fi
   echo
   echo "- Generated random passwords"
   echo "- Created the ${folder} folder containing the files:"
@@ -710,7 +778,11 @@ running_docker_compose() {
   if ! $docker; then
     error_msg="Error: ${docker} command failed!"
     echo "$error_msg"
-    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
+    if  [ -z "${esonly:-}" ]; then
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
+    else
+      generate_error_log "${error_msg}" "${elasticsearch_container_name}"
+    fi
     cleanup
     exit 1
   fi
@@ -733,15 +805,18 @@ kibana_wait() {
 
 success() {
   echo
-  echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
-  echo
-
-  echo "🌐 Open your browser at http://localhost:5601"
-  echo
-  echo "   Username: elastic"
-  echo "   Password: ${es_password}"
-  echo
-
+  if  [ -z "${esonly:-}" ]; then
+    echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
+    echo
+    echo "🌐 Open your browser at http://localhost:5601"
+    echo
+    echo "   Username: elastic"
+    echo "   Password: ${es_password}"
+    echo
+  else
+    echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
+  fi
+  
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
@@ -758,12 +833,14 @@ success() {
 }
 
 main() {
+  parse_args "$@"
   startup
   check_requirements
   check_installation_folder
   check_docker_services
   create_installation_folder
-  generate_passwords_api_keys
+  generate_passwords
+  choose_es_version
   create_start_file
   create_stop_file
   create_uninstall_file
@@ -785,4 +862,4 @@ ctrl_c() {
 trap ctrl_c INT
 
 # Execute the script
-main
+main "$@"
