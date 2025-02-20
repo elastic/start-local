@@ -40,7 +40,7 @@ This script creates an `elastic-start-local` folder containing:
 - `start.sh` and `stop.sh`: Scripts to start and stop Elasticsearch and Kibana
 - `uninstall.sh`: The script to uninstall Elasticsearch and Kibana
 
-## Select the version to install
+### Select the version to install
 
 By default, `stat-local` uses the latest stable version of Elastic stack. If you want, you can specify
 a different version using the `-v` parameter, as follows:
@@ -61,7 +61,7 @@ curl -fsSL https://elastic.co/start-local | sh -s -- -v 9.0.0-beta1
 
 The `9.0.0-beta1` version was released on February 18, 2025.
 
-## Install only Elasticsearch
+### Install only Elasticsearch
 
 If you want to install only Elasticsearch, without Kibana, you can use the `-esonly` option
 as follows:
@@ -71,7 +71,6 @@ curl -fsSL https://elastic.co/start-local | sh -s -- -esonly
 ```
 
 This command can be useful if you don't have enough resources and want to test only Elasticsearch.
-
 
 ### 🌐 Endpoints
 
