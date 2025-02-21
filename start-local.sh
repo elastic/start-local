@@ -77,7 +77,7 @@ startup() {
   echo
 
   # Version
-  version="0.7.0"
+  version="0.8.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
