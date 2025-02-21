@@ -42,7 +42,7 @@ This script creates an `elastic-start-local` folder containing:
 
 ### Select the version to install
 
-By default, `stat-local` uses the latest stable version of Elastic stack. If you want, you can specify
+By default, `start-local` uses the latest stable version of Elastic Stack. If you want, you can specify
 a different version using the `-v` parameter, as follows:
 
 ```bash
