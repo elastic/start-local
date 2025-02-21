@@ -17,43 +17,45 @@
 # under the License.
 
 CURRENT_DIR=$(pwd)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEST_DIR="${SCRIPT_DIR}/test-start-local"
-DEFAULT_DIR="elastic-start-local"
-ENV_PATH="${TEST_DIR}/${DEFAULT_DIR}/.env"
+DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
+ENV_PATH="${DEFAULT_DIR}/.env"
+DOCKER_COMPOSE_FILE="${DEFAULT_DIR}/docker-compose.yml"
+START_FILE="${DEFAULT_DIR}/start.sh"
+STOP_FILE="${DEFAULT_DIR}/stop.sh"
+UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 
 # include external scripts
-source "tests/utility.sh"
+source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    php -S 0.0.0.0:8080 -t "${SCRIPT_DIR}/.." &
-    PHP_SERVER_PID=$!
-    mkdir "${TEST_DIR}"
-    cd "${TEST_DIR}" || exit
-    sleep 2
-    curl -fsSL http://localhost:8080/start-local.sh | sh
+    sh "start-local.sh"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
-    cd "${CURRENT_DIR}" || exit
 }
 
 function tear_down_after_script() {
-    cd "${TEST_DIR}/${DEFAULT_DIR}" || exit
-    docker compose rm -fsv
-    docker compose down -v
-    cd "${SCRIPT_DIR}" || exit
-    rm -rf "${TEST_DIR}"
-    kill -9 "$PHP_SERVER_PID"
-    wait "$PHP_SERVER_PID" 2>/dev/null
-    cd "${CURRENT_DIR}" || exit
+    yes | "${DEFAULT_DIR}/uninstall.sh"
+    rm -rf "${DEFAULT_DIR}"
 }
 
 function test_docker_compose_file_exists() {
-    assert_file_exists "${TEST_DIR}/${DEFAULT_DIR}/docker-compose.yml"
+    assert_file_exists "${DOCKER_COMPOSE_FILE}"
 }
 
 function test_env_file_exists() {
     assert_file_exists "${ENV_PATH}"
+}
+
+function test_start_file_exists() {
+    assert_file_exists "${START_FILE}"
+}
+
+function test_stop_file_exists() {
+    assert_file_exists "${STOP_FILE}"
+}
+
+function test_uninstall_file_exists() {
+    assert_file_exists "${UNINSTALL_FILE}"
 }
 
 function test_elasticsearch_is_running() {  
@@ -69,4 +71,27 @@ function test_kibana_is_running() {
 function test_login_to_kibana() {
     result=$(login_kibana "http://localhost:5601" "elastic" "${ES_LOCAL_PASSWORD}")
     assert_equals "200" "$result"
+}
+
+function test_connector_API_for_Kibana() {
+    result=$(curl -X POST \
+    -u elastic:"${ES_LOCAL_PASSWORD}" \
+    -H 'Content-Type: application/json' \
+    -H 'kbn-xsrf: true' \
+    "localhost:5601/api/actions/connector" \
+    -d '{"name": "my-connector", "connector_type_id": ".index", "config": {"index": "test-index"}}' \
+    -o /dev/null \
+    -w '%{http_code}\n' -s)
+
+    assert_equals "200" "$result"
+}
+
+function test_API_key_exists() {
+    result=$(curl -X GET \
+    -u elastic:"${ES_LOCAL_PASSWORD}" \
+    -H 'Content-Type: application/json' \
+    "localhost:9200/_security/api_key" \
+    -d "{\"name\":\"${DEFAULT_DIR}\"}" \
+     -o /dev/null \
+    -w '%{http_code}\n' -s    )
 }
