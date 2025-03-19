@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint
-        uses: reviewdog/action-shellcheck@v1
+        uses: reviewdog/action-shellcheck@5ebd09ddbe2ebb471646ce234c6c8dd18663ca7c  # v1.30.0
         with:
           reporter: github-pr-check
           filter_mode: nofilter
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint
-        uses: reviewdog/action-markdownlint@v0
+        uses: reviewdog/action-markdownlint@3667398db9118d7e78f7a63d10e26ce454ba5f58  # v0.26.2
         with:
           reporter: github-pr-check
           filter_mode: nofilter
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint
-        uses: reviewdog/action-yamllint@v1
+        uses: reviewdog/action-yamllint@f01d8a48fd8d89f89895499fca2cff09f9e9e8c0  # v1.21.0
         with:
           reporter: github-pr-check
           filter_mode: nofilter
@@ -63,7 +63,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint
-        uses: reviewdog/action-actionlint@v1
+        uses: reviewdog/action-actionlint@a5524e1c19e62881d79c1f1b9b6f09f16356e281  # v1.65.2
         with:
           reporter: github-pr-check
           filter_mode: nofilter
