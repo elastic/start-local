@@ -683,7 +683,7 @@ EOM
       test:
         [
           "CMD-SHELL",
-          "curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:${ES_LOCAL_PORT}",
+          "curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
         ]
       interval: 10s
       timeout: 10s
@@ -705,7 +705,7 @@ if  [ -z "${esonly:-}" ]; then
         echo "Setup the kibana_system password";
         start_time=$$(date +%s);
         timeout=60;
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:${ES_LOCAL_PORT}/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
+        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
           if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
             echo "Error: Elasticsearch timeout";
             exit 1;
