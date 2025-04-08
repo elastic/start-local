@@ -465,8 +465,8 @@ create_env_file() {
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
-ES_LOCAL_URL=http://localhost:9200
 ES_LOCAL_PORT=9200
+ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
 ES_LOCAL_HEAP_INIT=128m
 ES_LOCAL_HEAP_MAX=2g
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
