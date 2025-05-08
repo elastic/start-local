@@ -631,7 +631,10 @@ EOM
   cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm -rf docker-compose.yml .env uninstall.sh start.sh stop.sh config/
+  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
+  if [ -z "\$(ls -A config)" ]; then
+    rm -d config
+  fi
   echo "Start-local successfully removed"
 fi
 EOM
@@ -761,7 +764,9 @@ create_kibana_config
 }
 
 create_kibana_config() {
-  mkdir config
+  if [ ! -d "config" ]; then
+    mkdir config
+  fi
   # Create telemetry
   cat > config/telemetry.yml <<- EOM
 start-local:
