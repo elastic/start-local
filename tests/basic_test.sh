@@ -92,6 +92,19 @@ function test_API_key_exists() {
     -H 'Content-Type: application/json' \
     "localhost:9200/_security/api_key" \
     -d "{\"name\":\"${DEFAULT_DIR}\"}" \
-     -o /dev/null \
-    -w '%{http_code}\n' -s    )
+    -o /dev/null \
+    -w '%{http_code}\n' -s)
+}
+
+function test_telemetry_start-local() {
+    result=$(curl -X POST \
+    -u "elastic:${ES_LOCAL_PASSWORD}" \
+    -H "kbn-xsrf: reporting" \
+    -H "Content-Type: application/json" \
+    -H "x-elastic-internal-origin: Kibana" \
+    "http://localhost:5601/internal/telemetry/clusters/_stats?apiVersion=2" \
+    -d "{\"unencrypted\":true,\"refreshCache\":true}" \
+    -s | jq '.[0].stats.stack_stats.kibana.plugins.static_telemetry."start-local".version')
+
+    assert_equals "\"${START_LOCAL_VERSION}\"" "$result"
 }

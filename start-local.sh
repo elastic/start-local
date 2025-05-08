@@ -77,7 +77,7 @@ startup() {
   echo
 
   # Version
-  version="0.8.1"
+  version="0.9.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -462,6 +462,7 @@ choose_es_version() {
 create_env_file() {
   # Create the .env file
   cat > .env <<- EOM
+START_LOCAL_VERSION=$version
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
@@ -630,7 +631,7 @@ EOM
   cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh start.sh stop.sh
+  rm -rf docker-compose.yml .env uninstall.sh start.sh stop.sh config/
   echo "Start-local successfully removed"
 fi
 EOM
@@ -722,6 +723,7 @@ if  [ -z "${esonly:-}" ]; then
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
     volumes:
       - dev-kibana:/usr/share/kibana/data
+      - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
     ports:
       - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
     environment:
@@ -754,6 +756,17 @@ if  [ -z "${esonly:-}" ]; then
   dev-kibana:
 EOM
 fi
+
+create_kibana_config
+}
+
+create_kibana_config() {
+  mkdir config
+  # Create telemetry
+  cat > config/telemetry.yml <<- EOM
+start-local:
+  version: ${version}
+EOM
 }
 
 print_steps() {

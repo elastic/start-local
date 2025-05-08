@@ -54,6 +54,7 @@ function login_kibana() {
     result=$(curl -X POST \
         -H "Content-Type: application/json" \
         -H "kbn-xsrf: reporting" \
+        -H "x-elastic-internal-origin: Kibana" \
         -d '{"providerType":"basic","providerName":"basic","currentURL":"'"$url"'/login?next=%2F","params":{"username":"'"$username"'","password":"'"$password"'"}}' \
         "${url}/internal/security/login" \
         -o /dev/null \
