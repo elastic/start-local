@@ -508,20 +508,21 @@ if [ "$available_gb" -lt "$required" ]; then
   echo "executed in read-only mode. Please free up disk space to resolve this issue."
   echo "----------------------------------------------------------------------------"
   echo "Press ENTER to confirm."
-  read -r
+  # shellcheck disable=SC2034
+  read -r line
 fi
 EOM
   if [ "$need_wait_for_kibana" = true ]; then
     cat >> start.sh <<-'EOM'
 wait_for_kibana() {
-  local timeout="${1:-60}"
+  _timeout="${1:-60}"
   echo "- Waiting for Kibana to be ready"
   echo
-  local start_time="$(date +%s)"
+  _start_time="$(date +%s)"
   until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
-    elapsed_time="$(($(date +%s) - start_time))"
-    if [ "$elapsed_time" -ge "$timeout" ]; then
-      echo "Error: Kibana timeout of ${timeout} sec"
+    elapsed_time="$(($(date +%s) - _start_time))"
+    if [ "$elapsed_time" -ge "$_timeout" ]; then
+      echo "Error: Kibana timeout of ${_timeout} sec"
       exit 1
     fi
     sleep 2
