@@ -21,12 +21,13 @@ DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
 ENV_PATH="${DEFAULT_DIR}/.env"
 UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 ES_VERSION="8.17.0"
+PASSWORD="changeme"
 
 # include external scripts
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "start-local.sh" "-v" "${ES_VERSION}"
+    sh "start-local.sh" "-v" "${ES_VERSION}" "-p" "${PASSWORD}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -40,8 +41,8 @@ function test_es_version_in_env_is_correct() {
     assert_file_contains "${ENV_PATH}" "ES_LOCAL_VERSION=${ES_VERSION}"
 }
 
-function test_es_version_is_correct() {  
-    response=$(curl -s "$ES_LOCAL_URL" -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}")
+function test_es_version_is_correct() {
+    response=$(curl -s "$ES_LOCAL_URL" -u "elastic:${PASSWORD}")
     version=$(echo "$response" | jq -r '.version.number')
     assert_equals "${ES_VERSION}" "$version"
 }

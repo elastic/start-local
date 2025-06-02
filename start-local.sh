@@ -36,6 +36,15 @@ parse_args() {
         shift 2
         ;;
 
+      -p)
+        if [ $# -lt 2 ]; then
+          echo "Error: -p requires a password value (eg. -p changeme)"
+          exit 1
+        fi
+        PASSWORD_OVERRIDE="$2"
+        shift 2
+        ;;
+
       -esonly)
         esonly=true
         shift
@@ -72,7 +81,7 @@ startup() {
   echo '-------------------------------------------------'
   echo '🚀 Run Elasticsearch and Kibana for local testing'
   echo '-------------------------------------------------'
-  echo 
+  echo
   echo 'ℹ️  Do not use this script in a production environment'
   echo
 
@@ -152,7 +161,7 @@ detect_lxc() {
       return 0
     fi
     # Check for LXC in /sys/fs/cgroup
-    if grep -q "lxc" /sys/fs/cgroup/* 2>/dev/null; then  
+    if grep -q "lxc" /sys/fs/cgroup/* 2>/dev/null; then
       return 0
     fi
     # Use systemd-detect-virt if available
@@ -238,12 +247,12 @@ generate_error_log() {
   if [ -n "${msg}" ]; then
     echo "${msg}" > "$error_file"
   fi
-  { 
+  {
     echo "Start-local version: ${version}"
     echo "Docker engine: $(docker --version)"
     echo "Docker compose: ${docker_version}"
     get_os_info
-  } >> "$error_file" 
+  } >> "$error_file"
   for service in $docker_services; do
     echo "-- Logs of service ${service}:" >> "$error_file"
     docker logs "${service}" >> "$error_file" 2> /dev/null
@@ -385,7 +394,7 @@ check_requirements() {
       echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
       cleanup
       exit 1
-    fi 
+    fi
   else
     docker_stop="docker compose stop"
     docker_clean="docker compose rm -fsv"
@@ -436,7 +445,7 @@ check_docker_services() {
 
 create_installation_folder() {
   # If $folder already exists, it is empty, see above
-  if [ ! -d "$folder" ]; then 
+  if [ ! -d "$folder" ]; then
     mkdir $folder
   fi
   cd $folder
@@ -444,8 +453,12 @@ create_installation_folder() {
 }
 
 generate_passwords() {
-  # Generate random passwords
-  es_password="$(random_password)"
+  if [ -n "${PASSWORD_OVERRIDE:-}" ]; then
+    es_password="${PASSWORD_OVERRIDE}"
+  else
+    es_password="$(random_password)"
+  fi
+
   if  [ -z "${esonly:-}" ]; then
     kibana_password="$(random_password)"
     kibana_encryption_key="$(random_password 32)"
@@ -548,7 +561,7 @@ if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   if [ "\$result" = "200" ]; then
     echo "✅ Basic license successfully installed"
     echo "ES_LOCAL_LICENSE=basic" >> .env
-  else 
+  else
     echo "Error: I cannot update the license"
     result=\$(curl -s -X GET "\${ES_LOCAL_URL}" -H "Authorization: ApiKey \${ES_LOCAL_API_KEY}" -o /dev/null -w '%{http_code}\n')
     if [ "\$result" != "200" ]; then
@@ -665,7 +678,7 @@ services:
       - cluster.routing.allocation.disk.watermark.high=${ES_LOCAL_DISK_SPACE_REQUIRED}
       - cluster.routing.allocation.disk.watermark.flood_stage=${ES_LOCAL_DISK_SPACE_REQUIRED}
 EOM
-  
+
   # Fix for JDK AArch64 issue, see https://bugs.openjdk.org/browse/JDK-8345296
   if is_arm64; then
   cat >> docker-compose.yml <<-'EOM'
@@ -782,7 +795,9 @@ print_steps() {
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
   fi
   echo
-  echo "- Generated random passwords"
+  if [ -z "${PASSWORD_OVERRIDE:-}" ]; then
+    echo "- Generated random passwords"
+  fi
   echo "- Created the ${folder} folder containing the files:"
   echo "  - .env, with settings"
   echo "  - docker-compose.yml, for Docker services"
@@ -835,7 +850,7 @@ success() {
   else
     echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
   fi
-  
+
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
@@ -872,7 +887,7 @@ main() {
   success
 }
 
-ctrl_c() { 
+ctrl_c() {
   cleanup
   exit 1
 }
