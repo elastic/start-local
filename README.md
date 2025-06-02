@@ -72,6 +72,13 @@ curl -fsSL https://elastic.co/start-local | sh -s -- -esonly
 
 This command can be useful if you don't have enough resources and want to test only Elasticsearch.
 
+### Specify elastic user password
+
+```bash
+curl -fsSL https://elastic.co/start-local | sh -s -- -p changeme
+```
+
+
 ### 🌐 Endpoints
 
 After running the script:
