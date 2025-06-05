@@ -80,3 +80,13 @@ check_docker_service_running() {
     return 1 # false
   fi
 }
+
+# Check if a docker image exists
+check_docker_image_exists() {
+  local image_name=$1
+  if docker image inspect "$image_name" > /dev/null 2>&1; then
+    return 0 # true
+  else
+    return 1 # false
+  fi
+}

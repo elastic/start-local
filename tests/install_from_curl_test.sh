@@ -37,7 +37,7 @@ function set_up_before_script() {
 }
 
 function tear_down_after_script() {
-    yes | "${DEFAULT_DIR}/uninstall.sh"
+    printf "yes\nno\n" | "${DEFAULT_DIR}/uninstall.sh"
     rm -rf "${DEFAULT_DIR}"
     kill -9 "$PHP_SERVER_PID"
     wait "$PHP_SERVER_PID" 2>/dev/null
