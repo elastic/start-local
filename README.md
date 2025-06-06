@@ -63,11 +63,11 @@ The `9.0.0-beta1` version was released on February 18, 2025.
 
 ### Install only Elasticsearch
 
-If you want to install only Elasticsearch, without Kibana, you can use the `-esonly` option
+If you want to install only Elasticsearch, without Kibana, you can use the `--esonly` option
 as follows:
 
 ```bash
-curl -fsSL https://elastic.co/start-local | sh -s -- -esonly
+curl -fsSL https://elastic.co/start-local | sh -s -- --esonly
 ```
 
 This command can be useful if you don't have enough resources and want to test only Elasticsearch.

@@ -77,7 +77,7 @@ startup() {
   echo
 
   # Version
-  version="0.9.1"
+  version="0.10.0"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -445,7 +445,7 @@ create_installation_folder() {
 
 generate_passwords() {
   # Generate random passwords
-  es_password="$(random_password)"
+  es_password="${ES_LOCAL_PASSWORD:-$(random_password)}"
   if  [ -z "${esonly:-}" ]; then
     kibana_password="$(random_password)"
     kibana_encryption_key="$(random_password 32)"
