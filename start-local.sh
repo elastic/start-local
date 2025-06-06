@@ -36,7 +36,7 @@ parse_args() {
         shift 2
         ;;
 
-      -esonly)
+      --esonly)
         esonly=true
         shift
         ;;
@@ -77,7 +77,7 @@ startup() {
   echo
 
   # Version
-  version="0.9.0"
+  version="0.9.1"
 
   # Folder name for the installation
   installation_folder="elastic-start-local"
@@ -599,7 +599,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 ask_confirmation() {
-    echo "Do you want to continue? (yes/no)"
+    echo "Do you confirm? (yes/no)"
     read -r answer
     case "$answer" in
         yes|y|Y|Yes|YES)
@@ -635,6 +635,38 @@ EOM
   rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
   if [ -z "\$(ls -A config)" ]; then
     rm -d config
+  fi
+  echo
+  echo "Do you want to remove the following Docker images?"
+  echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}"
+EOM
+
+  if  [ -z "${esonly:-}" ]; then
+    cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/kibana/kibana:${es_version}"
+EOM
+  fi
+
+  cat >> uninstall.sh <<- EOM
+  if ask_confirmation; then
+    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
+    fi
+EOM
+
+  if  [ -z "${esonly:-}" ]; then
+    cat >> uninstall.sh <<- EOM
+    if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
+    fi
+EOM
+  fi
+
+  cat >> uninstall.sh <<- EOM
   fi
   echo "Start-local successfully removed"
 fi

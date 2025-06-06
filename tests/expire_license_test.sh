@@ -24,13 +24,13 @@ ENV_PATH="${DEFAULT_DIR}/.env"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "start-local.sh"
+    sh "${CURRENT_DIR}/start-local.sh"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
 
 function tear_down_after_script() {
-    yes | "${DEFAULT_DIR}/uninstall.sh"
+    printf "yes\nno\n" | "${DEFAULT_DIR}/uninstall.sh"
     rm -rf "${DEFAULT_DIR}"
 }
 
