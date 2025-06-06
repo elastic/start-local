@@ -62,6 +62,6 @@ function test_uninstall_remove_images() {
     assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
     assert_is_directory_empty "${DEFAULT_DIR}"
-    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION})"
-    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION})"
+    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
 }
