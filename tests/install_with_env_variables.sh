@@ -24,27 +24,17 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 # include external scripts
 source "${CURRENT_DIR}/tests/utility.sh"
 
-function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh" "--esonly"
-    # shellcheck disable=SC1090
-    source "${ENV_PATH}"
+function tear_down() {
+    if [ -e "${UNINSTALL_FILE}" ]; then
+        printf "yes\nno\n" | "${UNINSTALL_FILE}"
+        rm -rf "${DEFAULT_DIR}"
+    fi
 }
 
-function tear_down_after_script() {
-    printf "yes\nno\n" | "${UNINSTALL_FILE}"
-    rm -rf "${DEFAULT_DIR}"
-}
-
-function test_kibana_is_not_in_env() {
-    assert_file_not_contains "${ENV_PATH}" "KIBANA_"
-}
-
-function test_kibana_docker_is_not_running() {  
-    containers="$(docker ps --format '{{.Names}}')"
-    assert_not_contains "kibana" "$containers"
-}
-
-function test_kibana_is_not_running() {  
-    result=$(get_http_response_code "http://localhost:5601")
-    assert_equals "000" "$result"
+function test_with_es_local_password_env() {
+    password="supersecret"
+    ES_LOCAL_PASSWORD="${password}" sh -c "${CURRENT_DIR}/start-local.sh"
+    assert_file_contains "${ENV_PATH}" "ES_LOCAL_PASSWORD=${password}"
+    result=$(get_http_response_code "http://localhost:9200" "elastic" "${password}")
+    assert_equals "200" "$result"
 }
