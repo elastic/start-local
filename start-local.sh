@@ -649,12 +649,20 @@ EOM
 
   cat >> uninstall.sh <<- EOM
   if ask_confirmation; then
-    docker rmi docker.elastic.co/elasticsearch/elasticsearch:${es_version}
+    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
+    fi
 EOM
 
   if  [ -z "${esonly:-}" ]; then
     cat >> uninstall.sh <<- EOM
-    docker rmi docker.elastic.co/kibana/kibana:${es_version}
+    if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
+    fi
 EOM
   fi
 
