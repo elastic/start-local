@@ -638,32 +638,66 @@ EOM
   fi
   echo
   echo "Do you want to remove the following Docker images?"
-  echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}"
 EOM
 
-  if  [ -z "${esonly:-}" ]; then
+  if is_arm64; then
     cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}-arm64"
+EOM
+    if  [ -z "${esonly:-}" ]; then
+      cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/kibana/kibana:${es_version}-arm64"
+EOM
+    fi
+  else
+    cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}"
+EOM
+    if  [ -z "${esonly:-}" ]; then
+      cat >> uninstall.sh <<- EOM
   echo "- docker.elastic.co/kibana/kibana:${es_version}"
 EOM
+    fi
   fi
 
   cat >> uninstall.sh <<- EOM
   if ask_confirmation; then
+EOM
+
+  if is_arm64; then
+    cat >> uninstall.sh <<- EOM
+    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}-arm64" >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version}-arm64 removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}-arm64. It might be in use."
+    fi
+EOM
+    if  [ -z "${esonly:-}" ]; then
+      cat >> uninstall.sh <<- EOM
+    if docker rmi docker.elastic.co/kibana/kibana:${es_version}-arm64 >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/kibana/kibana:${es_version}-arm64 removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}-arm64. It might be in use."
+    fi
+EOM
+    fi
+  else
+    cat >> uninstall.sh <<- EOM
     if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
       echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
     fi
 EOM
-
-  if  [ -z "${esonly:-}" ]; then
-    cat >> uninstall.sh <<- EOM
+    if  [ -z "${esonly:-}" ]; then
+      cat >> uninstall.sh <<- EOM
     if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
     fi
 EOM
+    fi
   fi
 
   cat >> uninstall.sh <<- EOM
@@ -679,7 +713,20 @@ create_docker_compose_file() {
   cat > docker-compose.yml <<-'EOM'
 services:
   elasticsearch:
+EOM
+
+  if is_arm64; then
+    cat >> docker-compose.yml <<-'EOM'
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}-arm64
+    platform: linux/arm64
+EOM
+  else
+    cat >> docker-compose.yml <<-'EOM'
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     container_name: ${ES_LOCAL_CONTAINER_NAME}
     volumes:
       - dev-elasticsearch:/usr/share/elasticsearch/data
@@ -734,7 +781,20 @@ if  [ -z "${esonly:-}" ]; then
     depends_on:
       elasticsearch:
         condition: service_healthy
+EOM
+
+  if is_arm64; then
+    cat >> docker-compose.yml <<-'EOM'
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}-arm64
+    platform: linux/arm64
+EOM
+  else
+    cat >> docker-compose.yml <<-'EOM'
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     container_name: kibana_settings
     restart: 'no'
     command: >
@@ -755,7 +815,20 @@ if  [ -z "${esonly:-}" ]; then
     depends_on:
       kibana_settings:
         condition: service_completed_successfully
+EOM
+
+  if is_arm64; then
+    cat >> docker-compose.yml <<-'EOM'
+    image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}-arm64
+    platform: linux/arm64
+EOM
+  else
+    cat >> docker-compose.yml <<-'EOM'
     image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
     volumes:
       - dev-kibana:/usr/share/kibana/data
