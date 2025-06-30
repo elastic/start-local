@@ -457,6 +457,10 @@ choose_es_version() {
     # Get the latest Elasticsearch version
     es_version="$(get_latest_version)"
   fi
+  # Fix for ARM64: add suffix "-arm64"
+  if is_arm64 && [ "${es_version##*-arm64}" = "$es_version" ]; then
+    es_version="${es_version}-arm64"
+  fi
 }
 
 create_env_file() {
