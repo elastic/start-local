@@ -80,7 +80,7 @@ startup() {
   version="0.10.0"
 
   # Folder name for the installation
-  installation_folder="elastic-start-local"
+  installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
   # API key name for Elasticsearch
   api_key_name="elastic-start-local"
   # Name of the error log
@@ -437,9 +437,9 @@ check_docker_services() {
 create_installation_folder() {
   # If $folder already exists, it is empty, see above
   if [ ! -d "$folder" ]; then 
-    mkdir $folder
+    mkdir "$folder"
   fi
-  cd $folder
+  cd "$folder"
   folder_to_clean=$folder
 }
 
