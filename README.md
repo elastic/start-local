@@ -157,6 +157,38 @@ ES_LOCAL_API_KEY=df34grtk...==
 > ./start.sh
 > ```
 
+## ⚠️ Advanced settings with ENV variables
+
+We offer some environment (ENV) variables for changing the settings of `start-local`.
+We suggest to use these ENV variables only for advanced use cases, e.g. CI/CD integrations.
+Please use caution when using these settings.
+
+### ES_LOCAL_PASSWORD
+
+If you need to set the Elasticsearch password manually, you can do it using the `ES_LOCAL_PASSWORD`.
+
+You need to set the env variable before the execution of the script, as follows:
+
+```bash
+curl -fsSL https://elastic.co/start-local | ES_LOCAL_PASSWORD="supersecret" sh
+```
+
+This command will set the `supersecret` password for Elasticsearch.
+
+**Please note** that this command can be dangerous if you use a weak password
+for Elasticsearch authentication.
+
+### ES_LOCAL_DIR
+
+By default, start-local creates an `elastic-start-local` folder. If you need to change it, you can use
+the `ES_LOCAL_DIR` env variable, as follows:
+
+```bash
+curl -fsSL https://elastic.co/start-local | ES_LOCAL_DIR="another-folder" sh
+```
+
+This command will creates the `another-folder` containing all the start-local files.
+
 ## 🧪 Testing the installer
 
 We use [bashunit](https://bashunit.typeddevs.com/) to test the script. Tests are in the `/tests` folder.
