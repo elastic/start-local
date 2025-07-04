@@ -88,9 +88,11 @@ startup() {
   # Minimum version for docker-compose
   min_docker_compose="1.29.0"
   # Elasticsearch container name
-  elasticsearch_container_name="es-local-dev"
+  elasticsearch_container_name="es-local-dev-${ES_LOCAL_DIR:-}"
   # Kibana container name
-  kibana_container_name="kibana-local-dev"
+  kibana_container_name="kibana-local-dev-${ES_LOCAL_DIR:-}"
+  # Kibana service container name
+  kibana_service_container_name="kibana-settings-${ES_LOCAL_DIR:-}"
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 }
@@ -480,6 +482,7 @@ EOM
   if  [ -z "${esonly:-}" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
+KIBANA_LOCAL_SERVICE_CONTAINER_NAME=$kibana_service_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -739,7 +742,7 @@ if  [ -z "${esonly:-}" ]; then
       elasticsearch:
         condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
-    container_name: kibana_settings
+    container_name: ${KIBANA_LOCAL_SERVICE_CONTAINER_NAME}
     restart: 'no'
     command: >
       bash -c '
