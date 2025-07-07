@@ -80,7 +80,7 @@ startup() {
   version="0.10.0"
 
   # Folder name for the installation
-  installation_folder="elastic-start-local"
+  installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
   # API key name for Elasticsearch
   api_key_name="elastic-start-local"
   # Name of the error log
@@ -88,9 +88,11 @@ startup() {
   # Minimum version for docker-compose
   min_docker_compose="1.29.0"
   # Elasticsearch container name
-  elasticsearch_container_name="es-local-dev"
+  elasticsearch_container_name="es-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Kibana container name
-  kibana_container_name="kibana-local-dev"
+  kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Kibana settings container name
+  kibana_settings_container_name="kibana-local-settings${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 }
@@ -292,7 +294,7 @@ wait_for_kibana() {
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
       echo "$error_msg"
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana-settings"
       cleanup
       exit 1
     fi
@@ -431,15 +433,15 @@ check_docker_services() {
   # Check for docker containers running
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
-  check_container_running "kibana_settings"
+  check_container_running "$kibana_settings_container_name"
 }
 
 create_installation_folder() {
   # If $folder already exists, it is empty, see above
   if [ ! -d "$folder" ]; then 
-    mkdir $folder
+    mkdir "$folder"
   fi
-  cd $folder
+  cd "$folder"
   folder_to_clean=$folder
 }
 
@@ -480,6 +482,7 @@ EOM
   if  [ -z "${esonly:-}" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
+KIBANA_LOCAL_SETTINGS_CONTAINER_NAME=$kibana_settings_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -739,7 +742,7 @@ if  [ -z "${esonly:-}" ]; then
       elasticsearch:
         condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
-    container_name: kibana_settings
+    container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
     restart: 'no'
     command: >
       bash -c '

@@ -40,7 +40,7 @@ function test_stop() {
 
     assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
     assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana_settings)"
+    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
 }
 
 function test_start() {
