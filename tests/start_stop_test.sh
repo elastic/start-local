@@ -38,14 +38,14 @@ function tear_down_after_script() {
 function test_stop() {
     "${TEST_DIR}/${DEFAULT_DIR}/stop.sh"
 
-    assert_exit_code "1" "$(check_docker_service_running es-local-dev-)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev-)"
-    assert_exit_code "1" "$(check_docker_service_running kibana_settings-)"
+    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
+    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
 }
 
 function test_start() {
     "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
 
-    assert_exit_code "0" "$(check_docker_service_running es-local-dev-)"
-    assert_exit_code "0" "$(check_docker_service_running kibana-local-dev-)"
+    assert_exit_code "0" "$(check_docker_service_running es-local-dev)"
+    assert_exit_code "0" "$(check_docker_service_running kibana-local-dev)"
 }
