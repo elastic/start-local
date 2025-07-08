@@ -795,7 +795,7 @@ configs:
 EOM
 }
 
-add_otel_service_in_docker_composer() {
+add_otel_service_in_docker_compose() {
   cat >> docker-compose.yml <<-'EOM'
   otel-collector:
     image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
