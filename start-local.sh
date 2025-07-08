@@ -940,7 +940,7 @@ EOM
 fi
 
 if [ "$otel" = "true" ]; then
-  add_otel_service_in_docker_composer
+  add_otel_service_in_docker_compose
 fi
 
   cat >> docker-compose.yml <<-'EOM'
