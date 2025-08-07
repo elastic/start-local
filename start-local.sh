@@ -1025,7 +1025,7 @@ success() {
     echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
   else
     if [ "$otel" = "true" ]; then
-      echo "🎉 Congrats, Elasticsearch, Kibana and OTEL collector are installed and running in Docker!"
+      echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running in Docker!"
     else
       echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
     fi
