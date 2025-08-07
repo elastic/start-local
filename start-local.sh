@@ -972,7 +972,7 @@ print_steps() {
   if  [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
   elif [ "$otel" = "true" ]; then
-    echo "⌛️ Setting up Elasticsearch, Kibana and OTEL collector v${es_version}..."
+    echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
   else
     echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   fi
