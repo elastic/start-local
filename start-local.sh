@@ -41,6 +41,11 @@ parse_args() {
         shift
         ;;
 
+      --debug)
+        http_debug=true
+        shift
+        ;;
+
       --)
         # End of options; shift and exit the loop
         shift
@@ -77,7 +82,7 @@ startup() {
   echo
 
   # Version
-  version="0.10.0"
+  version="0.11.0"
 
   # Folder name for the installation
   installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
@@ -400,6 +405,9 @@ check_requirements() {
     else
       docker="docker compose up -d"
     fi
+    if [ -n "${http_debug:-}" ]; then
+      docker="${docker} --build --quiet-build"
+    fi
   fi
   set -e
 }
@@ -691,7 +699,20 @@ services:
     volumes:
       - dev-elasticsearch:/usr/share/elasticsearch/data
     ports:
+EOM
+
+  # If debug is enabled, we disable host access because of the proxy
+  if [ -n "${http_debug:-}" ]; then
+      cat >> docker-compose.yml <<-'EOM'
+      - 9200
+EOM
+  else
+      cat >> docker-compose.yml <<-'EOM'
       - 127.0.0.1:${ES_LOCAL_PORT}:9200
+EOM
+  fi
+
+  cat >> docker-compose.yml <<-'EOM'
     environment:
       - discovery.type=single-node
       - ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}
@@ -735,8 +756,32 @@ EOM
 
 EOM
 
-if  [ -z "${esonly:-}" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  # Start debug-proxy service if enabled
+  if [ -n "${http_debug:-}" ]; then
+    cat >> docker-compose.yml <<-'EOM'
+  debug:
+    build:
+      context: .
+      dockerfile: mitmproxy/Dockerfile
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    image: mitmproxy/mitmproxy:12
+    container_name: debug-proxy
+    volumes:
+      - ./mitmproxy/proxy.py:/home/mitmproxy/.mitmproxy/proxy.py
+    environment:
+      - ES_LOCAL_PASSWORD=${ES_LOCAL_PASSWORD}
+    ports:
+      - 127.0.0.1:${ES_LOCAL_PORT}:${ES_LOCAL_PORT}
+    command: >
+      mitmdump -s /home/mitmproxy/.mitmproxy/proxy.py --mode reverse:http://elasticsearch:9200 --set ssl_insecure=true --set listen_port=${ES_LOCAL_PORT} --set keep_host_header=true
+
+EOM
+  fi
+
+  if  [ -z "${esonly:-}" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
       elasticsearch:
@@ -787,20 +832,23 @@ if  [ -z "${esonly:-}" ]; then
       retries: 30
 
 EOM
-fi
+  fi
 
   cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
 EOM
 
-if  [ -z "${esonly:-}" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  if [ -z "${esonly:-}" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
 EOM
-fi
+    create_kibana_config
+  fi
 
-create_kibana_config
+  if [ -n "${http_debug:-}" ]; then
+    create_mitmproxy_config
+  fi
 }
 
 create_kibana_config() {
@@ -811,6 +859,188 @@ create_kibana_config() {
   cat > config/telemetry.yml <<- EOM
 start-local:
   version: ${version}
+EOM
+}
+
+create_mitmproxy_config() {
+  if [ ! -d "mitmproxy" ]; then
+    mkdir mitmproxy
+  fi
+  cat > mitmproxy/proxy.py <<-'EOM'
+"""
+Proxy HTTP requests/responses to Elasticsearch
+"""
+import logging
+import os
+import re
+
+from urllib.parse import urlparse, unquote
+from typing import Final, Optional
+
+from elasticsearch import Elasticsearch
+from mitmproxy import http
+
+class ElasticsearchProxy:
+    INDEX_NAME: Final = ".start-local-http-debug"
+
+    def __init__(self):
+        password = os.getenv("ES_LOCAL_PASSWORD")
+        if not password:
+            logging.error("ES_LOCAL_PASSWORD environment variable is not set")
+            return
+
+        # Connect to Elasticsearch
+        self.client = Elasticsearch(
+            "http://elasticsearch:9200",
+            basic_auth=("elastic", password)
+        )
+        # Create the index mapping, if not present
+        if not self.client.indices.exists(index=ElasticsearchProxy.INDEX_NAME):
+            properties = {
+                "@timestamp": {
+                    "type": "date"
+                },
+                "duration": {
+                    "type": "float"
+                },
+                "index_pattern": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }
+                },
+                "operation": {
+                    "type": "keyword"
+                },
+                "request": {
+                    "type": "object",
+                    "properties": {
+                        "method": {
+                            "type": "keyword",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        },
+                        "http_version": {
+                            "type": "keyword"
+                        },
+                        "url" : {
+                            "type": "text"
+                        },
+                        "body": {
+                            "type": "text"
+                        },
+                        "headers": {
+                            "type": "object"
+                        },
+                        "body_size_bytes": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "response": {
+                    "type": "object",
+                    "properties": {
+                        "status_code": {
+                            "type": "short"
+                        },
+                        "headers": {
+                            "type": "object"
+                        },
+                        "body": {
+                            "type": "text"
+                        },
+                        "body_size_bytes": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+            self.client.indices.create(
+                index=ElasticsearchProxy.INDEX_NAME,
+                mappings={'properties': properties}
+            )
+
+    def response(self, flow: http.HTTPFlow):
+        # Store the request and response in Elasticsearch
+        duration = flow.response.timestamp_end - flow.request.timestamp_start
+        # Redact the Authorization header in the request
+        flow.request.headers["Authorization"] = "[REDACTED]"
+
+        # Prepare the document to be indexed
+        doc = {
+            "request": {
+                "http_version": flow.request.http_version,
+                "method": flow.request.method,
+                "url": flow.request.url,
+                "headers": dict(flow.request.headers),
+                "body": flow.request.text,
+                "body_size_bytes": len(flow.request.text)
+            },
+            "response": {
+                "status_code": flow.response.status_code,
+                "headers": dict(flow.response.headers),
+                "body": flow.response.text,
+                "body_size_bytes": len(flow.response.text)
+            },
+            "duration": duration,
+            "operation": self._extract_operation_from_url(flow.request.url),
+            "index_pattern": self._extract_index_from_url(flow.request.url)
+        }
+
+        # Index the document in Elasticsearch
+        result = self.client.index(
+            index=ElasticsearchProxy.INDEX_NAME,
+            document=doc
+        )
+
+    def _extract_operation_from_url(self, url: str) -> Optional[str]:
+        """
+        Return the first operation token from the URL path, e.g. '_search', '_count', '_bulk'.
+        Looks anywhere in the (decoded) path; ignores query/fragment. Returns None if absent.
+        """
+        path = unquote(urlparse(url).path or "")
+        m = re.search(r'_[A-Za-z][A-Za-z0-9._-]*', path)
+        return m.group(0) if m else None
+
+    def _extract_index_from_url(self, url: str) -> Optional[str]:
+        """
+        Return the index segment from an Elasticsearch API URL, or None if not present.
+        """
+        path = unquote(urlparse(url).path or "")
+        segments = [s for s in path.split("/") if s]
+
+        if not segments:
+            return None
+
+        # Cluster-level APIs like "/_search", "/_cat/indices"
+        if segments[0].startswith("_"):
+            return None
+
+        # Collect segments until the first underscore-prefixed API segment
+        pre_underscore = []
+        for seg in segments:
+            if seg.startswith("_"):
+                break
+            pre_underscore.append(seg)
+
+        # If there's no underscore segment, it's likely a typed doc path like "/{index}/{type}/{id}"
+        # or similar — in both cases, the index is the first segment.
+        return pre_underscore[0] if pre_underscore else None
+
+addons = [ElasticsearchProxy()]
+EOM
+
+  cat > mitmproxy/Dockerfile <<-'EOM'
+FROM mitmproxy/mitmproxy:12
+WORKDIR /home/mitmproxy/.mitmproxy
+RUN pip install elasticsearch
 EOM
 }
 
@@ -836,12 +1066,15 @@ running_docker_compose() {
   if ! $docker; then
     error_msg="Error: ${docker} command failed!"
     echo "$error_msg"
+    services_to_log="${elasticsearch_container_name}"
     if  [ -z "${esonly:-}" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
-    else
-      generate_error_log "${error_msg}" "${elasticsearch_container_name}"
+      services_to_log="${services_to_log} ${kibana_container_name} kibana_settings"
     fi
-    cleanup
+    if [ -n "${http_debug:-}" ]; then
+      services_to_log="${services_to_log} debug-proxy"
+    fi
+    generate_error_log "${error_msg}" "${services_to_log}"
+    #cleanup
     exit 1
   fi
   set -e
@@ -873,6 +1106,7 @@ success() {
     echo
   else
     echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
+    echo
   fi
   
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
@@ -884,7 +1118,12 @@ success() {
     echo "https://www.elastic.co/guide/en/kibana/current/api-keys.html"
     echo
   fi
-  echo
+
+  if [ -n "${http_debug:-}" ]; then
+    echo "🔍 Debug HTTP enabled at http://localhost:8081?token=elastic"
+    echo
+  fi
+  
   echo "Learn more at https://github.com/elastic/start-local"
 
   echo
