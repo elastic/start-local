@@ -1120,7 +1120,7 @@ success() {
   fi
 
   if [ -n "${http_debug:-}" ]; then
-    echo "🔍 Debug HTTP enabled at http://localhost:8081?token=elastic"
+    echo "🔍 Debug HTTP enabled in Dev Tools of Kibana"
     echo
   fi
   
