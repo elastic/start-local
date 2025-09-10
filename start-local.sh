@@ -25,7 +25,7 @@ set -eu
 parse_args() {
   #parameters
   esonly=false
-  otel=false
+  edot=false
   # Parse the script parameters
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -44,8 +44,8 @@ parse_args() {
         shift
         ;;
 
-      --otel)
-        otel=true
+      --edot)
+        edot=true
         shift
         ;;
 
@@ -68,8 +68,8 @@ parse_args() {
     esac
   done
   # Verify parameter consistency
-  if [ "$esonly" = "true" ] && [ "$otel" = "true" ]; then
-    echo "Error: the --otel parameter requires also Kibana, you cannot use --esonly"
+  if [ "$esonly" = "true" ] && [ "$edot" = "true" ]; then
+    echo "Error: the --edot parameter requires also Kibana, you cannot use --esonly"
     exit 1
   fi
 }
@@ -106,8 +106,8 @@ startup() {
   kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Kibana settings container name
   kibana_settings_container_name="kibana-local-settings${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
-  # OTEL container name
-  otel_container_name="otel-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # EDOT container name
+  edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 }
@@ -263,8 +263,8 @@ generate_error_log() {
     if [ "$esonly" = "true" ]; then
       echo "--esonly parameter used"
     fi
-    if [ "$otel" = "true" ]; then
-      echo "--otel parameter used"
+    if [ "$edot" = "true" ]; then
+      echo "--edot parameter used"
     fi
     get_os_info
   } >> "$error_file" 
@@ -316,8 +316,8 @@ wait_for_kibana() {
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
       echo "$error_msg"
-      if [ "$otel" = "true" ]; then
-        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${otel_container_name}"
+      if [ "$edot" = "true" ]; then
+        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
       else
         generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
       fi
@@ -460,7 +460,7 @@ check_docker_services() {
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
   check_container_running "$kibana_settings_container_name"
-  check_container_running "$otel_container_name"
+  check_container_running "$edot_container_name"
 }
 
 create_installation_folder() {
@@ -504,10 +504,10 @@ ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
 EOM
 
-  if [ "$otel" = "true" ]; then
+  if [ "$edot" = "true" ]; then
     cat >> .env <<- EOM
 ES_LOCAL_JAVA_OPTS="-Xms2g -Xmx2g"
-OTEL_LOCAL_CONTAINER_NAME=$otel_container_name
+EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
 EOM
   else
     cat >> .env <<- EOM
@@ -690,9 +690,9 @@ EOM
 EOM
   fi
 
-  if  [ "$otel" = "true" ]; then
+  if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-  echo "- docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version}"
+  echo "- docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}"
 EOM
   fi
 
@@ -715,12 +715,12 @@ EOM
 EOM
   fi
 
-  if  [ "$otel" = "true" ]; then
+  if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version} >/dev/null 2>&1; then
-      echo "Image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version} removed successfully"
+    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
     else
-      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version}. It might be in use."
+      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
     fi
 EOM
   fi
@@ -733,7 +733,7 @@ EOM
   chmod +x uninstall.sh
 }
 
-add_otel_config_in_docker_compose() {
+add_edot_config_in_docker_compose() {
   # Add the OTLP configs in docker-compose.yml
   cat >> docker-compose.yml <<-'EOM'
 configs:
@@ -742,64 +742,69 @@ configs:
   edot-collector-config:
     content: |
       receivers:
+        # Receives data from other Collectors in Agent mode
         otlp:
           protocols:
             grpc:
-              endpoint: 0.0.0.0:4317
+              endpoint: 0.0.0.0:4317 # Listen on all interfaces
             http:
-              endpoint: 0.0.0.0:4318
-      
+              endpoint: 0.0.0.0:4318 # Listen on all interfaces
+
       connectors:
-        elasticapm:
-      
+        elasticapm: {} # Elastic APM Connector
+
       processors:
-        elastictrace:
-      
+        batch:
+          send_batch_size: 1000
+          timeout: 1s
+          send_batch_max_size: 1500
+        batch/metrics:
+          send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
+          timeout: 1s
+        elastictrace: {} # Elastic Trace Processor
+
       exporters:
-        elasticsearch:
-          endpoint: http://elasticsearch:9200
+        debug: {}
+        elasticsearch/otel:
+          endpoints:
+            - http://elasticsearch:9200
           user: elastic
-          password: ${ES_LOCAL_PASSWORD}
+          password: ${ES_LOCAL_PASSWORD}  
+          tls:
+            insecure_skip_verify: true
           mapping:
             mode: otel
-          logs_dynamic_index:
-            enabled: true
-          metrics_dynamic_index:
-            enabled: true
-          traces_dynamic_index:
-            enabled: true
-          flush:
-            interval: 1s  # improve responsiveness in example apps (default 30s)
-      
+
       service:
         pipelines:
-          traces:
-            receivers: [otlp]
-            processors: [elastictrace]
-            exporters: [elasticapm, elasticsearch]
-      
           metrics:
             receivers: [otlp]
-            processors: []
-            exporters: [elasticsearch]
-      
-          metrics/aggregated:
-            receivers: [elasticapm]
-            processors: []
-            exporters: [elasticsearch]
-      
+            processors: [batch/metrics]
+            exporters: [debug, elasticsearch/otel]
           logs:
             receivers: [otlp]
-            processors: []
-            exporters: [elasticapm, elasticsearch]
+            processors: [batch]
+            exporters: [debug, elasticapm, elasticsearch/otel]
+          traces:
+            receivers: [otlp]
+            processors: [batch, elastictrace]
+            exporters: [debug, elasticapm, elasticsearch/otel]
+          metrics/aggregated-otel-metrics:
+            receivers:
+              - elasticapm
+            processors: [] # No processors defined in the original for this pipeline
+            exporters:
+              - debug
+              - elasticsearch/otel
+
 EOM
 }
 
-add_otel_service_in_docker_composer() {
+add_edot_service_in_docker_composer() {
   cat >> docker-compose.yml <<-'EOM'
-  otel-collector:
+  edot-collector:
     image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
-    container_name: ${OTEL_LOCAL_CONTAINER_NAME}
+    container_name: ${EDOT_LOCAL_CONTAINER_NAME}
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -821,8 +826,8 @@ EOM
 
 create_docker_compose_file() {
   # Create the docker-compose.yml file
-  if [ "$otel" = "true" ]; then
-    add_otel_config_in_docker_compose
+  if [ "$edot" = "true" ]; then
+    add_edot_config_in_docker_compose
   fi
   cat >> docker-compose.yml <<-'EOM'
 services:
@@ -919,7 +924,7 @@ if  [ "$esonly" = "false" ]; then
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
 EOM
 
-if [ "$otel" = "true" ]; then
+if [ "$edot" = "true" ]; then
   cat >> docker-compose.yml <<-'EOM'
       - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
 EOM
@@ -939,8 +944,8 @@ fi
 EOM
 fi
 
-if [ "$otel" = "true" ]; then
-  add_otel_service_in_docker_composer
+if [ "$edot" = "true" ]; then
+  add_edot_service_in_docker_composer
 fi
 
   cat >> docker-compose.yml <<-'EOM'
@@ -971,8 +976,8 @@ EOM
 print_steps() {
   if  [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
-  elif [ "$otel" = "true" ]; then
-    echo "⌛️ Setting up Elasticsearch, Kibana and OTEL collector v${es_version}..."
+  elif [ "$edot" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
   else
     echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   fi
@@ -994,8 +999,8 @@ running_docker_compose() {
     echo "$error_msg"
     if [ "$esonly" = "true" ]; then
       generate_error_log "${error_msg}" "${elasticsearch_container_name}"
-    elif [ "$otel" = "true" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${otel_container_name}"
+    elif [ "$edot" = "true" ]; then
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
     else
       generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
     fi
@@ -1024,8 +1029,8 @@ success() {
   if  [ "$esonly" = "true" ]; then
     echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
   else
-    if [ "$otel" = "true" ]; then
-      echo "🎉 Congrats, Elasticsearch, Kibana and OTEL collector are installed and running in Docker!"
+    if [ "$edot" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running in Docker!"
     else
       echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
     fi
