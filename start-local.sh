@@ -23,6 +23,9 @@
 set -eu
 
 parse_args() {
+  #parameters
+  esonly=false
+  edot=false
   # Parse the script parameters
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -38,6 +41,11 @@ parse_args() {
 
       --esonly)
         esonly=true
+        shift
+        ;;
+
+      --edot)
+        edot=true
         shift
         ;;
 
@@ -59,6 +67,11 @@ parse_args() {
         ;;
     esac
   done
+  # Verify parameter consistency
+  if [ "$esonly" = "true" ] && [ "$edot" = "true" ]; then
+    echo "Error: the --edot parameter requires also Kibana, you cannot use --esonly"
+    exit 1
+  fi
 }
 
 startup() {
@@ -77,7 +90,7 @@ startup() {
   echo
 
   # Version
-  version="0.10.0"
+  version="0.11.0"
 
   # Folder name for the installation
   installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
@@ -93,6 +106,8 @@ startup() {
   kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Kibana settings container name
   kibana_settings_container_name="kibana-local-settings${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # EDOT container name
+  edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 }
@@ -244,6 +259,13 @@ generate_error_log() {
     echo "Start-local version: ${version}"
     echo "Docker engine: $(docker --version)"
     echo "Docker compose: ${docker_version}"
+    echo "Elastic Stack version: ${es_version}"
+    if [ "$esonly" = "true" ]; then
+      echo "--esonly parameter used"
+    fi
+    if [ "$edot" = "true" ]; then
+      echo "--edot parameter used"
+    fi
     get_os_info
   } >> "$error_file" 
   for service in $docker_services; do
@@ -294,7 +316,11 @@ wait_for_kibana() {
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
       echo "$error_msg"
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana-settings"
+      if [ "$edot" = "true" ]; then
+        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
+      else
+        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
+      fi
       cleanup
       exit 1
     fi
@@ -434,6 +460,7 @@ check_docker_services() {
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
   check_container_running "$kibana_settings_container_name"
+  check_container_running "$edot_container_name"
 }
 
 create_installation_folder() {
@@ -448,7 +475,7 @@ create_installation_folder() {
 generate_passwords() {
   # Generate random passwords
   es_password="${ES_LOCAL_PASSWORD:-$(random_password)}"
-  if  [ -z "${esonly:-}" ]; then
+  if  [ "$esonly" = "false" ]; then
     kibana_password="$(random_password)"
     kibana_encryption_key="$(random_password 32)"
   fi
@@ -474,12 +501,21 @@ ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
-ES_LOCAL_HEAP_INIT=128m
-ES_LOCAL_HEAP_MAX=2g
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
 EOM
 
-  if  [ -z "${esonly:-}" ]; then
+  if [ "$edot" = "true" ]; then
+    cat >> .env <<- EOM
+ES_LOCAL_JAVA_OPTS="-Xms2g -Xmx2g"
+EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
+EOM
+  else
+    cat >> .env <<- EOM
+ES_LOCAL_JAVA_OPTS="-Xms128m -Xmx2g"
+EOM
+  fi
+
+  if [ "$esonly" = "false" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
 KIBANA_LOCAL_SETTINGS_CONTAINER_NAME=$kibana_settings_container_name
@@ -648,9 +684,15 @@ EOM
   echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}"
 EOM
 
-  if  [ -z "${esonly:-}" ]; then
+  if  [ "$esonly" = "false" ]; then
     cat >> uninstall.sh <<- EOM
   echo "- docker.elastic.co/kibana/kibana:${es_version}"
+EOM
+  fi
+
+  if  [ "$edot" = "true" ]; then
+    cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}"
 EOM
   fi
 
@@ -663,12 +705,22 @@ EOM
     fi
 EOM
 
-  if  [ -z "${esonly:-}" ]; then
+  if  [ "$esonly" = "false" ]; then
     cat >> uninstall.sh <<- EOM
     if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
+    fi
+EOM
+  fi
+
+  if  [ "$edot" = "true" ]; then
+    cat >> uninstall.sh <<- EOM
+    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
     fi
 EOM
   fi
@@ -681,9 +733,103 @@ EOM
   chmod +x uninstall.sh
 }
 
+add_edot_config_in_docker_compose() {
+  # Add the OTLP configs in docker-compose.yml
+  cat >> docker-compose.yml <<-'EOM'
+configs:
+  # This is the minimal yaml configuration needed to listen on all interfaces
+  # for OTLP logs, metrics and traces, exporting to Elasticsearch.
+  edot-collector-config:
+    content: |
+      receivers:
+        # Receives data from other Collectors in Agent mode
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317 # Listen on all interfaces
+            http:
+              endpoint: 0.0.0.0:4318 # Listen on all interfaces
+
+      connectors:
+        elasticapm: {} # Elastic APM Connector
+
+      processors:
+        batch:
+          send_batch_size: 1000
+          timeout: 1s
+          send_batch_max_size: 1500
+        batch/metrics:
+          send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
+          timeout: 1s
+        elastictrace: {} # Elastic Trace Processor
+
+      exporters:
+        debug: {}
+        elasticsearch/otel:
+          endpoints:
+            - http://elasticsearch:9200
+          user: elastic
+          password: ${ES_LOCAL_PASSWORD}  
+          tls:
+            insecure_skip_verify: true
+          mapping:
+            mode: otel
+
+      service:
+        pipelines:
+          metrics:
+            receivers: [otlp]
+            processors: [batch/metrics]
+            exporters: [debug, elasticsearch/otel]
+          logs:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [debug, elasticapm, elasticsearch/otel]
+          traces:
+            receivers: [otlp]
+            processors: [batch, elastictrace]
+            exporters: [debug, elasticapm, elasticsearch/otel]
+          metrics/aggregated-otel-metrics:
+            receivers:
+              - elasticapm
+            processors: [] # No processors defined in the original for this pipeline
+            exporters:
+              - debug
+              - elasticsearch/otel
+
+EOM
+}
+
+add_edot_service_in_docker_composer() {
+  cat >> docker-compose.yml <<-'EOM'
+  edot-collector:
+    image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
+    container_name: ${EDOT_LOCAL_CONTAINER_NAME}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    command: [
+      "--config=/etc/otelcol-contrib/config.yaml",
+    ]
+    configs:
+      - source: edot-collector-config
+        target: /etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"  # grpc
+      - "4318:4318"  # http
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/127.0.0.1/4317'"]
+      retries: 300
+      interval: 1s  
+EOM
+}
+
 create_docker_compose_file() {
-  # Create the docker-compose-yml file
-  cat > docker-compose.yml <<-'EOM'
+  # Create the docker-compose.yml file
+  if [ "$edot" = "true" ]; then
+    add_edot_config_in_docker_compose
+  fi
+  cat >> docker-compose.yml <<-'EOM'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
@@ -699,7 +845,7 @@ services:
       - xpack.security.http.ssl.enabled=false
       - xpack.license.self_generated.type=trial
       - xpack.ml.use_auto_machine_memory_percent=true
-      - ES_JAVA_OPTS=-Xms${ES_LOCAL_HEAP_INIT} -Xmx${ES_LOCAL_HEAP_MAX}
+      - ES_JAVA_OPTS=${ES_LOCAL_JAVA_OPTS}
       - cluster.routing.allocation.disk.watermark.low=${ES_LOCAL_DISK_SPACE_REQUIRED}
       - cluster.routing.allocation.disk.watermark.high=${ES_LOCAL_DISK_SPACE_REQUIRED}
       - cluster.routing.allocation.disk.watermark.flood_stage=${ES_LOCAL_DISK_SPACE_REQUIRED}
@@ -735,7 +881,7 @@ EOM
 
 EOM
 
-if  [ -z "${esonly:-}" ]; then
+if  [ "$esonly" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
@@ -776,6 +922,15 @@ if  [ -z "${esonly:-}" ]; then
       - ELASTICSEARCH_PASSWORD=${KIBANA_LOCAL_PASSWORD}
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
+EOM
+
+if [ "$edot" = "true" ]; then
+  cat >> docker-compose.yml <<-'EOM'
+      - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
+EOM
+fi
+
+  cat >> docker-compose.yml <<-'EOM'
     healthcheck:
       test:
         [
@@ -789,12 +944,16 @@ if  [ -z "${esonly:-}" ]; then
 EOM
 fi
 
+if [ "$edot" = "true" ]; then
+  add_edot_service_in_docker_composer
+fi
+
   cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
 EOM
 
-if  [ -z "${esonly:-}" ]; then
+if  [ "$esonly" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
 EOM
@@ -815,10 +974,12 @@ EOM
 }
 
 print_steps() {
-  if  [ -z "${esonly:-}" ]; then
-    echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
-  else
+  if  [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
+  elif [ "$edot" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
+  else
+    echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   fi
   echo
   echo "- Generated random passwords"
@@ -836,10 +997,12 @@ running_docker_compose() {
   if ! $docker; then
     error_msg="Error: ${docker} command failed!"
     echo "$error_msg"
-    if  [ -z "${esonly:-}" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} kibana_settings"
-    else
+    if [ "$esonly" = "true" ]; then
       generate_error_log "${error_msg}" "${elasticsearch_container_name}"
+    elif [ "$edot" = "true" ]; then
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
+    else
+      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
     fi
     cleanup
     exit 1
@@ -863,18 +1026,22 @@ kibana_wait() {
 
 success() {
   echo
-  if  [ -z "${esonly:-}" ]; then
-    echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
+  if  [ "$esonly" = "true" ]; then
+    echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
+  else
+    if [ "$edot" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running in Docker!"
+    else
+      echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
+    fi
     echo
     echo "🌐 Open your browser at http://localhost:5601"
     echo
     echo "   Username: elastic"
     echo "   Password: ${es_password}"
     echo
-  else
-    echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
   fi
-  
+
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"

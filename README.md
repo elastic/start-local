@@ -72,6 +72,20 @@ curl -fsSL https://elastic.co/start-local | sh -s -- --esonly
 
 This command can be useful if you don't have enough resources and want to test only Elasticsearch.
 
+### Install the Elastic Distribution of OpenTelemetry (EDOT) Collector
+
+You can install the [EDOT Collector](https://www.elastic.co/docs/reference/opentelemetry/edot-collector)
+using the `--edot` option, as follows:
+
+```bash
+curl -fsSL https://elastic.co/start-local | sh -s -- --edot
+```
+
+This command will install the latest Elasticsearch, Kibana and EDOT collector.
+
+[Here](https://www.elastic.co/docs/reference/opentelemetry) you can find more information about
+Elastic Distributions of OpenTelemetry (EDOT).
+
 ### 🌐 Endpoints
 
 After running the script:
