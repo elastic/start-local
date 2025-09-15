@@ -18,7 +18,6 @@
 
 CURRENT_DIR=$(pwd)
 DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
-ENV_PATH="${DEFAULT_DIR}/.env"
 UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 
 # include external scripts
