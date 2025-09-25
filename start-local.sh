@@ -90,7 +90,7 @@ startup() {
   echo
 
   # Version
-  version="0.11.0"
+  version="0.12.0"
 
   # Folder name for the installation
   installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
@@ -1043,6 +1043,9 @@ success() {
   fi
 
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
+  if [ "$edot" = "true" ]; then
+    echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
+  fi
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
     echo
@@ -1051,9 +1054,7 @@ success() {
     echo "https://www.elastic.co/guide/en/kibana/current/api-keys.html"
     echo
   fi
-  echo
   echo "Learn more at https://github.com/elastic/start-local"
-
   echo
 }
 
