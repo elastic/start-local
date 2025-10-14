@@ -769,7 +769,7 @@ configs:
           endpoints:
             - http://elasticsearch:9200
           user: elastic
-          password: ${ES_LOCAL_PASSWORD}  
+          password: ${ES_LOCAL_PASSWORD}
           tls:
             insecure_skip_verify: true
           mapping:
@@ -820,7 +820,7 @@ add_edot_service_in_docker_composer() {
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/127.0.0.1/4317'"]
       retries: 300
-      interval: 1s  
+      interval: 1s
 EOM
 }
 
