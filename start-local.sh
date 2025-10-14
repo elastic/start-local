@@ -924,9 +924,15 @@ if  [ "$esonly" = "false" ]; then
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
 EOM
 
+# Customize the default solution for spaces
 if [ "$edot" = "true" ]; then
   cat >> docker-compose.yml <<-'EOM'
       - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
+      - XPACK_SPACES_DEFAULTSOLUTION=oblt
+EOM
+else
+  cat >> docker-compose.yml <<-'EOM'
+      - XPACK_SPACES_DEFAULTSOLUTION=es
 EOM
 fi
 
