@@ -26,11 +26,6 @@ jobs:
       run: |
         curl -s https://bashunit.typeddevs.com/install.sh | bash
    
-    - name: Cache Docker images.
-      uses: ScribeMD/docker-cache@0.5.0
-      with:
-        key: docker-${{ runner.os }}-${{ hashFiles('start-local.sh') }}
-
     - name: Run the tests
       run: |
         ./lib/bashunit
