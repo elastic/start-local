@@ -16,6 +16,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+set -e -o pipefail # Settings as in Github action
+
 CURRENT_DIR=$(pwd)
 DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
 ENV_PATH="${DEFAULT_DIR}/.env"
@@ -30,6 +32,7 @@ source "${CURRENT_DIR}/tests/utility.sh"
 function set_up_before_script() {
     python -m http.server 8000 &
     PYTHON_HTTP_SERVER_PID=$!
+    disown "$PYTHON_HTTP_SERVER_PID"
     sleep 2
     curl -fsSL http://localhost:8000/start-local.sh | sh
     # shellcheck disable=SC1090
@@ -37,9 +40,9 @@ function set_up_before_script() {
 }
 
 function tear_down_after_script() {
-    printf "yes\nno\n" | "${UNINSTALL_FILE}" || true
+    printf "yes\nno\n" | "${UNINSTALL_FILE}"
     rm -rf "${DEFAULT_DIR}"
-    kill -9 "${PYTHON_HTTP_SERVER_PID}"
+    kill "${PYTHON_HTTP_SERVER_PID}" 2>/dev/null
     wait "${PYTHON_HTTP_SERVER_PID}" 2>/dev/null
 }
 
