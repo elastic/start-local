@@ -224,4 +224,5 @@ We use [bashunit](https://bashunit.typeddevs.com/) to test the script. Tests are
 The tests run `start-local.sh` and check if Elasticsearch and Kibana are working.
 
 > [!NOTE]
-> For URL pipeline testing, a local web server is used. This requires [PHP](https://www.php.net/).
+> For URL pipeline testing, a local web server is required. 
+> We used the [Python http.server](https://docs.python.org/3/library/http.server.html).

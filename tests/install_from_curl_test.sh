@@ -28,19 +28,19 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    php -S 0.0.0.0:8080 &
-    PHP_SERVER_PID=$!
+    python -m http.server 8000 &
+    PYTHON_HTTP_SERVER_PID=$!
     sleep 2
-    curl -fsSL http://localhost:8080/start-local.sh | sh
+    curl -fsSL http://localhost:8000/start-local.sh | sh
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
 
 function tear_down_after_script() {
-    printf "yes\nno\n" | "${DEFAULT_DIR}/uninstall.sh"
+    printf "yes\nno\n" | "${UNINSTALL_FILE}"
     rm -rf "${DEFAULT_DIR}"
-    kill -9 "$PHP_SERVER_PID"
-    wait "$PHP_SERVER_PID" 2>/dev/null
+    kill -9 ${PYTHON_HTTP_SERVER_PID}
+    wait ${PYTHON_HTTP_SERVER_PID} 2>/dev/null
 }
 
 function test_docker_compose_file_exists() {
