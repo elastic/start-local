@@ -37,7 +37,7 @@ function set_up_before_script() {
 }
 
 function tear_down_after_script() {
-    printf "yes\nno\n" | "${UNINSTALL_FILE}"
+    printf "yes\nno\n" | "${UNINSTALL_FILE}" || true
     rm -rf "${DEFAULT_DIR}"
     kill -9 "${PYTHON_HTTP_SERVER_PID}"
     wait "${PYTHON_HTTP_SERVER_PID}" 2>/dev/null
