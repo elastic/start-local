@@ -228,7 +228,9 @@ get_os_info() {
 }
 
 # Check if a command exists
-available() { command -v "$1" >/dev/null; }
+available() {
+  command -v "$1" >/dev/null;
+}
 
 # Revert the status, removing containers, volumes, network and folder
 cleanup() {
@@ -255,10 +257,14 @@ generate_error_log() {
   if [ -n "${msg}" ]; then
     echo "${msg}" > "$error_file"
   fi
+  container_runtime="Docker"
+  if [ "$is_podman" = "true" ]; then
+    container_runtime="Podman"
+  fi
   { 
     echo "Start-local version: ${version}"
-    echo "Docker engine: $(docker --version)"
-    echo "Docker compose: ${docker_version}"
+    echo "$container_runtime engine: $docker_version"
+    echo "$container_runtime compose: $compose_version"
     echo "Elastic Stack version: ${es_version}"
     if [ "$esonly" = "true" ]; then
       echo "--esonly parameter used"
@@ -354,7 +360,7 @@ create_api_key() {
 # parameter: the name of the container
 check_container_running() {
   container_name=$1
-  containers="$(docker ps --format '{{.Names}}')"
+  containers=$($docker_list_containers)
   if echo "$containers" | grep -q "^${container_name}$"; then
     echo "The docker container '$container_name' is already running!"
     echo "You can have only one running at time."
@@ -390,44 +396,94 @@ check_requirements() {
     exit 1
   fi
   need_wait_for_kibana=true
-  # Check for "docker compose" or "docker-compose"
-  set +e
-  if ! docker compose >/dev/null 2>&1; then
-    if ! available "docker-compose"; then
-      if ! available "docker"; then
-        echo "Error: docker command is required"
-        echo "You can install it from https://docs.docker.com/engine/install/."
+
+  # Initialize container runtime commands.
+
+  is_podman=false
+  available "docker" && has_docker=true || has_docker=false
+  available "podman" && has_podman=true || has_podman=false
+
+  if [ "$has_docker" = "false" ] && [ "$has_podman" = "false" ]; then
+    echo "Error: Either Docker or Podman must be installed"
+    echo "You can install docker from https://docs.docker.com/engine/install/."
+    echo "You can install podman from https://podman.io/getting-started/installation/."
+    exit 1
+  fi
+
+  if [ "$has_docker" = "true" ]; then
+    # Use Docker as container runtime.
+
+    docker_version="docker --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+'"
+    docker_list_containers="docker ps --format '{{.Names}}'"
+    docker_remove_image="docker rmi"
+
+    available "docker-compose" && has_docker_compose_v1=true || has_docker_compose_v1=false
+    docker compose version >/dev/null 2>&1 && has_docker_compose_v2=true || has_docker_compose_v2=false
+
+    if [ "$has_docker_compose_v1" = "false" ] && [ "$has_docker_compose_v2" = "false" ]; then
+      echo "Error: Docker Compose is required"
+      echo "You can install it from https://docs.docker.com/compose/install/."
+      exit 1
+    fi
+
+    if [ "$has_docker_compose_v2" = "true" ]; then
+      # docker-compose v2
+
+      compose_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+
+      # --wait option has been introduced in 2.1.1+
+      if [ "$(compare_versions "$compose_version" "2.1.0")" = "gt" ]; then
+        docker_up="docker compose up --wait"
+        need_wait_for_kibana=false
+      else
+        docker_up="docker compose up -d"
+      fi
+
+      docker_stop="docker compose stop"
+      docker_clean="docker compose rm -fsv"
+      docker_remove_volumes="docker compose down -v"
+    else
+      # docker compose v1
+
+      compose_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+
+      if [ "$(compare_versions "$compose_version" "$min_docker_compose")" = "lt" ]; then
+        echo "The minimum required version is of Docker Compose is '$min_docker_compose'. The currently installed version '${compose_version}' is not supported."
+        echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/."
+        cleanup
         exit 1
       fi
-      echo "Error: docker compose is required"
-      echo "You can install it from https://docs.docker.com/compose/install/"
-      exit 1
+
+      docker_up="docker-compose up -d"
+      docker_stop="docker-compose stop"
+      docker_clean="docker-compose rm -fsv"
+      docker_remove_volumes="docker-compose down -v"
     fi
-    docker="docker-compose up -d"
-    docker_stop="docker-compose stop"
-    docker_clean="docker-compose rm -fsv"
-    docker_remove_volumes="docker-compose down -v"
-    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
-      echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
-      echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
-      cleanup
-      exit 1
-    fi 
-  else
-    docker_stop="docker compose stop"
-    docker_clean="docker compose rm -fsv"
-    docker_remove_volumes="docker compose down -v"
-    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    # --wait option has been introduced in 2.1.1+
-    if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
-      docker="docker compose up --wait"
-      need_wait_for_kibana=false
-    else
-      docker="docker compose up -d"
-    fi
+
+    return
   fi
-  set -e
+
+  available "podman-compose" && has_podman_compose=true || has_podman_compose=false
+
+  if [ "$has_podman_compose" = "false" ]; then
+    echo "Error: Podman Compose is required"
+    echo "You can install it from https://github.com/containers/podman-compose?tab=readme-ov-file#installation."
+    exit 1
+  fi
+
+  compose_version=$(podman-compose version | grep -i 'podman-composer' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+
+  # Use Podman as container runtime.
+  is_podman=true
+  docker_version=$(podman --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+  docker_list_containers="podman ps --format '{{.Names}}'"
+  docker_remove_image="podman rmi"
+  # Podman-compose does not support '--wait'.
+  docker_up="podman-compose up -d"
+  docker_stop="podman-compose stop"
+  # Podman-compose does not support 'rm'.
+  docker_clean="true"
+  docker_remove_volumes="podman-compose down -v"
 }
 
 check_installation_folder() {
@@ -586,7 +642,7 @@ if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   echo "For more info about the license: https://www.elastic.co/subscriptions"
   echo
   echo "Updating the license..."
-  $docker elasticsearch >/dev/null 2>&1
+  $docker_up elasticsearch >/dev/null 2>&1
   result=\$(curl -s -X POST "\${ES_LOCAL_URL}/_license/start_basic?acknowledge=true" -H "Authorization: ApiKey \${ES_LOCAL_API_KEY}" -o /dev/null -w '%{http_code}\n')
   if [ "\$result" = "200" ]; then
     echo "✅ Basic license successfully installed"
@@ -601,7 +657,7 @@ if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   fi
   echo
 fi
-$docker
+$docker_up
 EOM
 
   if [ "$need_wait_for_kibana" = true ]; then
@@ -698,7 +754,7 @@ EOM
 
   cat >> uninstall.sh <<- EOM
   if ask_confirmation; then
-    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
+    if $docker_remove_image "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
       echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
@@ -707,7 +763,7 @@ EOM
 
   if  [ "$esonly" = "false" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
+    if $docker_remove_image docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
@@ -717,7 +773,7 @@ EOM
 
   if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
+    if $docker_remove_image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
@@ -806,8 +862,7 @@ add_edot_service_in_docker_composer() {
     image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
     container_name: ${EDOT_LOCAL_CONTAINER_NAME}
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     command: [
       "--config=/etc/otelcol-contrib/config.yaml",
     ]
@@ -859,7 +914,7 @@ EOM
   fi
 
   # Fix for OCI issue on LXC, see https://github.com/elastic/start-local/issues/27
-  if ! detect_lxc; then
+  if ! detect_lxc && [ "$is_podman" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
     ulimits:
       memlock:
@@ -885,8 +940,7 @@ if  [ "$esonly" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
     restart: 'no'
@@ -902,12 +956,12 @@ if  [ "$esonly" = "false" ]; then
           fi;
           sleep 2;
         done;
+        sleep infinity;
       '
 
   kibana:
     depends_on:
-      kibana_settings:
-        condition: service_completed_successfully
+      - kibana_settings
     image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
     volumes:
@@ -997,11 +1051,11 @@ print_steps() {
 
 running_docker_compose() {
   # Execute docker compose
-  echo "- Running ${docker}"
+  echo "- Running ${docker_up}"
   echo
   set +e
-  if ! $docker; then
-    error_msg="Error: ${docker} command failed!"
+  if ! $docker_up; then
+    error_msg="Error: ${docker_up} command failed!"
     echo "$error_msg"
     if [ "$esonly" = "true" ]; then
       generate_error_log "${error_msg}" "${elasticsearch_container_name}"
