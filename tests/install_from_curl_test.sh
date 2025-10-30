@@ -21,7 +21,6 @@ set -e -o pipefail # Settings as in Github action
 CURRENT_DIR=$(pwd)
 DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
 ENV_PATH="${DEFAULT_DIR}/.env"
-DOCKER_COMPOSE_FILE="${DEFAULT_DIR}/docker-compose.yml"
 START_FILE="${DEFAULT_DIR}/start.sh"
 STOP_FILE="${DEFAULT_DIR}/stop.sh"
 UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
@@ -44,10 +43,6 @@ function tear_down_after_script() {
     rm -rf "${DEFAULT_DIR}"
     kill "${PYTHON_HTTP_SERVER_PID}" 2>/dev/null
     wait "${PYTHON_HTTP_SERVER_PID}" 2>/dev/null
-}
-
-function test_docker_compose_file_exists() {
-    assert_file_exists "${DOCKER_COMPOSE_FILE}"
 }
 
 function test_env_file_exists() {
