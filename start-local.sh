@@ -20,96 +20,50 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
 set -eu
 
-parse_args() {
-  #parameters
-  esonly=false
-  edot=false
-  # Parse the script parameters
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -v)
-        # Check that there is another argument for the version
-        if [ $# -lt 2 ]; then
-          echo "Error: -v requires a version value (eg. -v 8.17.0)"
-          exit 1
-        fi
-        es_version="$2"
-        shift 2
-        ;;
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-      --esonly)
-        esonly=true
-        shift
-        ;;
+### Helper functions ###############################################################################
 
-      --edot)
-        edot=true
-        shift
-        ;;
+# Returns 0 if command exists in PATH.
+available() {
+  command -v "$1" >/dev/null 2>&1
+}
 
-      --)
-        # End of options; shift and exit the loop
-        shift
-        break
-        ;;
-
-      -*)
-        # Unknown or unsupported option
-        echo "Error: Unknown option '$1'"
-        exit 1
-        ;;
-
-      *)
-        # We've hit a non-option argument; stop parsing options
-        break
-        ;;
-    esac
-  done
-  # Verify parameter consistency
-  if [ "$esonly" = "true" ] && [ "$edot" = "true" ]; then
-    echo "Error: the --edot parameter requires also Kibana, you cannot use --esonly"
+# Checks the available disk space in GB
+# parameter: required size in GB
+check_disk_space_gb() {
+  required=$1
+  available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
+  if [ "$available_gb" -lt "$required" ]; then
+    echo "Error: Only '${available_gb}' GB disk space available; '${required}' GB is required."
     exit 1
   fi
 }
 
-startup() {
-  echo
-  echo '  ______ _           _   _      '
-  echo ' |  ____| |         | | (_)     '
-  echo ' | |__  | | __ _ ___| |_ _  ___ '
-  echo ' |  __| | |/ _` / __| __| |/ __|'
-  echo ' | |____| | (_| \__ \ |_| | (__ '
-  echo ' |______|_|\__,_|___/\__|_|\___|'
-  echo '-------------------------------------------------'
-  echo '🚀 Run Elasticsearch and Kibana for local testing'
-  echo '-------------------------------------------------'
-  echo 
-  echo 'ℹ️  Do not use this script in a production environment'
-  echo
 
-  # Version
-  version="0.12.0"
+# Check if a container is runnning
+# parameter: the name of the container
+check_container_running() {
+  container_name=$1
+  containers=$($container_cli ps --format '{{.Names}}')
+  if echo "$containers" | grep -q "^${container_name}$"; then
+    echo "The container '$container_name' is already running!"
+    echo "You can have only one running at time."
+    echo "To stop the container run the following command:"
+    echo
+    echo "$container_cli stop $container_name"
+    exit 1
+  fi
+}
 
-  # Folder name for the installation
-  installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
-  # API key name for Elasticsearch
-  api_key_name="elastic-start-local"
-  # Name of the error log
-  error_log="error-start-local.log"
-  # Minimum version for docker-compose
-  min_docker_compose="1.29.0"
-  # Elasticsearch container name
-  elasticsearch_container_name="es-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
-  # Kibana container name
-  kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
-  # Kibana settings container name
-  kibana_settings_container_name="kibana-local-settings${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
-  # EDOT container name
-  edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
-  # Minimum disk space required for docker images + services (in GB)
-  min_disk_space_required=5
+# Generates a random password with letters and numbers
+# parameter: size of the password (default is 8 characters)
+random_password() {
+  LENGTH="${1:-8}"
+  LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "${LENGTH}"
 }
 
 # Check for ARM64 architecture
@@ -158,30 +112,18 @@ get_latest_version() {
   echo "$latest_version"
 }
 
-# Detect if running on LXC container
-detect_lxc() {
-    # Check /proc/1/environ for LXC container identifier
-    if grep -qa "container=lxc" /proc/1/environ 2>/dev/null; then
-      return 0
+# Revert the status, removing containers, volumes, network and folder
+cleanup() {
+  if [ -d "$installation_folder" ]; then
+    if [ -f "uninstall.sh" ]; then
+      "$installation_folder/stop.sh" >/dev/null 2>&1 || true
+      "$installation_folder/uninstall.sh" >/dev/null 2>&1 || true
     fi
-    # Check /proc/self/cgroup for LXC references
-    if grep -q "lxc" /proc/self/cgroup 2>/dev/null; then
-      return 0
-    fi
-    # Check for LXC in /sys/fs/cgroup
-    if grep -q "lxc" /sys/fs/cgroup/* 2>/dev/null; then  
-      return 0
-    fi
-    # Use systemd-detect-virt if available
-    if command -v systemd-detect-virt >/dev/null 2>&1; then
-      if [ "$(systemd-detect-virt)" = "lxc" ]; then
-        return 0
-      fi
-    fi
-    return 1
+
+    rm -rf "$installation_folder"
+  fi
 }
 
-# Get linux distribution
 get_os_info() {
   if [ -f /etc/os-release ]; then
       # Most modern Linux distributions have this file
@@ -227,38 +169,22 @@ get_os_info() {
   fi
 }
 
-# Check if a command exists
-available() { command -v "$1" >/dev/null; }
-
-# Revert the status, removing containers, volumes, network and folder
-cleanup() {
-  if [ -d "./../$folder_to_clean" ]; then
-    if [ -f "docker-compose.yml" ]; then
-      $docker_clean >/dev/null 2>&1
-      $docker_remove_volumes >/dev/null 2>&1
-    fi
-    cd ..
-    rm -rf "${folder_to_clean}"
-  fi
-}
-
 # Generate the error log
 # parameter 1: error message
 # parameter 2: the container names to retrieve, separated by comma
 generate_error_log() {
   msg="$1"
-  docker_services="$2"
-  error_file="$error_log"
-  if [ -d "./../$folder_to_clean" ]; then
-    error_file="./../$error_log"
-  fi
+  services="$2"
+
+  error_file="$script_dir/$error_log"
+
   if [ -n "${msg}" ]; then
     echo "${msg}" > "$error_file"
   fi
+
   { 
     echo "Start-local version: ${version}"
-    echo "Docker engine: $(docker --version)"
-    echo "Docker compose: ${docker_version}"
+    echo "$container_cli engine version: $container_runtime_version"
     echo "Elastic Stack version: ${es_version}"
     if [ "$esonly" = "true" ]; then
       echo "--esonly parameter used"
@@ -267,167 +193,183 @@ generate_error_log() {
       echo "--edot parameter used"
     fi
     get_os_info
-  } >> "$error_file" 
-  for service in $docker_services; do
+  } >> "$error_file"
+
+  for service in $services; do
     echo "-- Logs of service ${service}:" >> "$error_file"
-    docker logs "${service}" >> "$error_file" 2> /dev/null
+    $container_cli logs "${service}" >> "$error_file" 2> /dev/null
   done
-  echo "An error log has been generated in ${error_log} file."
+
+  echo "An error log has been generated in '${error_log}' file."
   echo "If you need assistance, open an issue at https://github.com/elastic/start-local/issues"
 }
 
-# Compare versions
-# parameter 1: version to compare
-# parameter 2: version to compare
-compare_versions() {
-  v1=$1
-  v2=$2
+### Main functions #################################################################################
 
-  original_ifs="$IFS"
-  IFS='.'
-  # shellcheck disable=SC2086
-  set -- $v1; v1_major=${1:-0}; v1_minor=${2:-0}; v1_patch=${3:-0}
-  IFS='.'
-  # shellcheck disable=SC2086
-  set -- $v2; v2_major=${1:-0}; v2_minor=${2:-0}; v2_patch=${3:-0}
-  IFS="$original_ifs"
-
-  [ "$v1_major" -lt "$v2_major" ] && echo "lt" && return 0
-  [ "$v1_major" -gt "$v2_major" ] && echo "gt" && return 0
-
-  [ "$v1_minor" -lt "$v2_minor" ] && echo "lt" && return 0
-  [ "$v1_minor" -gt "$v2_minor" ] && echo "gt" && return 0
-
-  [ "$v1_patch" -lt "$v2_patch" ] && echo "lt" && return 0
-  [ "$v1_patch" -gt "$v2_patch" ] && echo "gt" && return 0
-
-  echo "eq"
-}
-
-# Wait for availability of Kibana
-# parameter: timeout in seconds
-wait_for_kibana() {
-  timeout="${1:-60}"
-  echo "- Waiting for Kibana to be ready"
+startup() {
   echo
-  start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
-    elapsed_time="$(($(date +%s) - start_time))"
-    if [ "$elapsed_time" -ge "$timeout" ]; then
-      error_msg="Error: Kibana timeout of ${timeout} sec"
-      echo "$error_msg"
-      if [ "$edot" = "true" ]; then
-        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
-      else
-        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
-      fi
-      cleanup
-      exit 1
-    fi
-    sleep 2
+  echo '  ______ _           _   _      '
+  echo ' |  ____| |         | | (_)     '
+  echo ' | |__  | | __ _ ___| |_ _  ___ '
+  echo ' |  __| | |/ _` / __| __| |/ __|'
+  echo ' | |____| | (_| \__ \ |_| | (__ '
+  echo ' |______|_|\__,_|___/\__|_|\___|'
+  echo '-------------------------------------------------'
+  echo '🚀 Run Elasticsearch and Kibana for local testing'
+  echo '-------------------------------------------------'
+  echo 
+  echo 'ℹ️  Do not use this script in a production environment'
+  echo
+
+  # Version
+  version="0.13.0"
+
+  # Folder name for the installation
+  installation_folder="${ES_LOCAL_DIR:-"$script_dir/elastic-start-local"}"
+  # API key name for Elasticsearch
+  api_key_name="elastic-start-local"
+  # Name of the error log
+  error_log="error-start-local.log"
+  container_network_name="es-local-dev-net${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Elasticsearch container name
+  elasticsearch_container_name="es-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Kibana container name
+  kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # EDOT container name
+  edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Minimum disk space required for docker images + services (in GB)
+  min_disk_space_required=5
+
+  # TODO:
+  container_runtime_version=0.0.0
+}
+
+parse_args() {
+  # Parameters
+  esonly=false
+  edot=false
+
+  # Parse the script parameters.
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -v)
+        # Check that there is another argument for the version.
+        if [ $# -lt 2 ]; then
+          echo "Error: -v requires a version value (eg. -v 8.17.0)"
+          exit 1
+        fi
+        es_version="$2"
+        shift 2
+        ;;
+
+      --esonly)
+        esonly=true
+        shift
+        ;;
+
+      --edot)
+        edot=true
+        shift
+        ;;
+
+      --)
+        # End of options; shift and exit the loop.
+        shift
+        break
+        ;;
+
+      -*)
+        # Unknown or unsupported option.
+        echo "Error: Unknown option '$1'"
+        exit 1
+        ;;
+
+      *)
+        # We've hit a non-option argument; stop parsing options.
+        break
+        ;;
+    esac
   done
-}
 
-# Generates a random password with letters and numbers
-# parameter: size of the password (default is 8 characters)
-random_password() {
-  LENGTH="${1:-8}"
-  LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${LENGTH}"
-}
-
-# Create an API key for Elasticsearch
-# parameter 1: the Elasticsearch password
-# parameter 2: name of the API key to generate
-create_api_key() {
-  es_password=$1
-  name=$2
-  response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
-  if [ -z "$response" ]; then
-    echo ""
-  else
-    api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
-    echo "$api_key"
-  fi
-}
-
-# Check if a container is runnning
-# parameter: the name of the container
-check_container_running() {
-  container_name=$1
-  containers="$(docker ps --format '{{.Names}}')"
-  if echo "$containers" | grep -q "^${container_name}$"; then
-    echo "The docker container '$container_name' is already running!"
-    echo "You can have only one running at time."
-    echo "To stop the container run the following command:"
-    echo
-    echo "docker stop $container_name"
-    exit 1
-  fi
-}
-
-# Check the available disk space in GB
-# parameter: required size in GB
-check_disk_space_gb() {
-  required=$1
-  available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
-  if [ "$available_gb" -lt "$required" ]; then
-    echo "Error: only ${available_gb} GB of disk space available; ${required} GB required for the installation"
+  # Verify parameter consistency.
+  if [ "$esonly" = "true" ] && [ "$edot" = "true" ]; then
+    echo "Error: The --edot parameter requires also Kibana, you cannot use --esonly."
     exit 1
   fi
 }
 
 check_requirements() {
-  # Check the requirements
-  check_disk_space_gb ${min_disk_space_required}
-  if ! available "curl"; then
-    echo "Error: curl command is required"
-    echo "You can install it from https://curl.se/download.html."
-    exit 1
-  fi
-  if ! available "grep"; then
-    echo "Error: grep command is required"
-    echo "You can install it from https://www.gnu.org/software/grep/."
-    exit 1
-  fi
-  need_wait_for_kibana=true
-  # Check for "docker compose" or "docker-compose"
-  set +e
-  if ! docker compose >/dev/null 2>&1; then
-    if ! available "docker-compose"; then
-      if ! available "docker"; then
-        echo "Error: docker command is required"
-        echo "You can install it from https://docs.docker.com/engine/install/."
-        exit 1
+  # Check required commands.
+
+  requirements='
+curl|https://curl.se/download.html
+grep|https://www.gnu.org/software/grep/
+head|https://www.gnu.org/software/coreutils/
+tail|https://www.gnu.org/software/coreutils/
+tr|https://www.gnu.org/software/coreutils/
+mkdir|https://www.gnu.org/software/coreutils/
+uname|https://www.gnu.org/software/coreutils/
+df|https://www.gnu.org/software/coreutils/
+awk|https://www.gnu.org/software/gawk/
+date|https://www.gnu.org/software/coreutils/
+cat|https://www.gnu.org/software/coreutils/
+'
+
+  missing=0
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      ''|\#*) continue ;;
+    esac
+
+    case "$entry" in
+      *'|'*)
+        cmd=${entry%%|*}
+        url=${entry#*|}
+        ;;
+      *)
+        cmd=$entry
+        url=
+        ;;
+    esac
+
+    if ! available "$cmd"; then
+      printf 'Error: %s command is required\n' "$cmd"
+      if [ -n "$url" ]; then
+        printf 'You can install it from %s\n' "$url"
       fi
-      echo "Error: docker compose is required"
-      echo "You can install it from https://docs.docker.com/compose/install/"
-      exit 1
+      missing=1
     fi
-    docker="docker-compose up -d"
-    docker_stop="docker-compose stop"
-    docker_clean="docker-compose rm -fsv"
-    docker_remove_volumes="docker-compose down -v"
-    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
-      echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
-      echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
-      cleanup
-      exit 1
-    fi 
-  else
-    docker_stop="docker compose stop"
-    docker_clean="docker compose rm -fsv"
-    docker_remove_volumes="docker compose down -v"
-    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    # --wait option has been introduced in 2.1.1+
-    if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
-      docker="docker compose up --wait"
-      need_wait_for_kibana=false
-    else
-      docker="docker compose up -d"
-    fi
+  done <<EOF
+$requirements
+EOF
+
+  if [ "$missing" -ne 0 ]; then
+    exit 1
   fi
-  set -e
+
+  # Check available disk space.
+
+  check_disk_space_gb ${min_disk_space_required}
+}
+
+initialize_container_runtime() {
+  available "docker" && has_docker=true || has_docker=false
+  available "podman" && has_podman=true || has_podman=false
+
+  if [ "$has_docker" = "false" ] && [ "$has_podman" = "false" ]; then
+    echo "Error: Either Docker or Podman must be installed"
+    echo "You can install Docker from https://docs.docker.com/engine/install/."
+    echo "You can install Podman from https://podman.io/getting-started/installation/."
+    exit 1
+  fi
+
+  if [ "$has_docker" = "true" ]; then
+    container_cli="docker"
+    return 0
+  fi
+
+  container_cli="podman"
 }
 
 check_installation_folder() {
@@ -435,19 +377,15 @@ check_installation_folder() {
   folder=$installation_folder
   if [ -d "$folder" ]; then
     if [ -n "$(ls -A "$folder")" ]; then
-      echo "It seems you have already a start-local installation in '${folder}'."
+      echo "It seems you already have a 'start-local' installation in '${folder}'."
       if [ -f "$folder/uninstall.sh" ]; then
         echo "I cannot proceed unless you uninstall it, using the following command:"
-        echo "cd $folder && ./uninstall.sh"
+        echo "$folder/uninstall.sh"
       else
-        echo "I did not find the uninstall.sh file, you need to proceed manually."
-        if [ -f "$folder/docker-compose.yml" ] && [ -f "$folder/.env" ]; then
+        echo "I did not find the 'uninstall.sh' file, you need to proceed manually."
+        if [ -f "$folder/.env" ]; then
           echo "Execute the following commands:"
-          echo "cd $folder"
-          echo "$docker_clean"
-          echo "$docker_remove_volumes"
-          echo "cd .."
-          echo "rm -rf $folder"
+          # TODO:
         fi
       fi
       exit 1
@@ -455,30 +393,40 @@ check_installation_folder() {
   fi
 }
 
-check_docker_services() {
-  # Check for docker containers running
+check_container_services() {
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
-  check_container_running "$kibana_settings_container_name"
   check_container_running "$edot_container_name"
 }
 
 create_installation_folder() {
-  # If $folder already exists, it is empty, see above
   if [ ! -d "$folder" ]; then 
     mkdir "$folder"
   fi
   cd "$folder"
-  folder_to_clean=$folder
 }
 
 generate_passwords() {
-  # Generate random passwords
+  # Generate random passwords.
   es_password="${ES_LOCAL_PASSWORD:-$(random_password)}"
-  if  [ "$esonly" = "false" ]; then
+  if [ "$esonly" = "false" ]; then
     kibana_password="$(random_password)"
     kibana_encryption_key="$(random_password 32)"
   fi
+}
+
+create_scripts() {
+  # TODO: Inline contents.
+  cp ../container-create.sh ./initialize.sh
+  chmod +x ./initialize.sh
+  cp ../container-start.sh ./start.sh
+  chmod +x ./start.sh
+  cp ../container-stop.sh ./stop.sh
+  chmod +x ./stop.sh
+  cp ../container-destroy.sh ./finalize.sh
+  chmod +x ./finalize.sh
+  cp ../uninstall.sh ./uninstall.sh
+  chmod +x ./uninstall.sh
 }
 
 choose_es_version() {
@@ -493,15 +441,22 @@ choose_es_version() {
 }
 
 create_env_file() {
+  today=$(date +%s)
+  license_expire=$((today + 3600*24*30))
+
   # Create the .env file
   cat > .env <<- EOM
 START_LOCAL_VERSION=$version
+CONTAINER_CLI=$container_cli
+CONTAINER_NETWORK_NAME=$container_network_name
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
 ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
+ES_LOCAL_API_KEY_NAME=$api_key_name
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
+ES_LOCAL_LICENSE_EXPIRE_DATE=$license_expire
 EOM
 
   if [ "$edot" = "true" ]; then
@@ -518,7 +473,6 @@ EOM
   if [ "$esonly" = "false" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
-KIBANA_LOCAL_SETTINGS_CONTAINER_NAME=$kibana_settings_container_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -526,457 +480,33 @@ EOM
   fi
 }
 
-# Create the start script (start.sh)
-# including the license update if trial expired
-create_start_file() {
-  today=$(date +%s)
-  expire=$((today + 3600*24*30))
-
-  cat > start.sh <<-'EOM'
-#!/bin/sh
-# Start script for start-local
-# More information: https://github.com/elastic/start-local
-set -eu
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${SCRIPT_DIR}"
-today=$(date +%s)
-. ./.env
-# Check disk space
-available_gb=$(($(df -k / | awk 'NR==2 {print $4}') / 1024 / 1024))
-required=$(echo "${ES_LOCAL_DISK_SPACE_REQUIRED}" | grep -Eo '[0-9]+')
-if [ "$available_gb" -lt "$required" ]; then
-  echo "----------------------------------------------------------------------------"
-  echo "WARNING: Disk space is below the ${required} GB limit. Elasticsearch will be"
-  echo "executed in read-only mode. Please free up disk space to resolve this issue."
-  echo "----------------------------------------------------------------------------"
-  echo "Press ENTER to confirm."
-  # shellcheck disable=SC2034
-  read -r line
-fi
-EOM
-  if [ "$need_wait_for_kibana" = true ]; then
-    cat >> start.sh <<-'EOM'
-wait_for_kibana() {
-  _timeout="${1:-60}"
-  echo "- Waiting for Kibana to be ready"
-  echo
-  _start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
-    elapsed_time="$(($(date +%s) - _start_time))"
-    if [ "$elapsed_time" -ge "$_timeout" ]; then
-      echo "Error: Kibana timeout of ${_timeout} sec"
-      exit 1
-    fi
-    sleep 2
-  done
-}
-
-EOM
-  fi
-
-  cat >> start.sh <<- EOM
-if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
-  echo "---------------------------------------------------------------------"
-  echo "The one-month trial period has expired. You can continue using the"
-  echo "Free and open Basic license or request to extend the trial for"
-  echo "another 30 days using this form:"
-  echo "https://www.elastic.co/trialextension"
-  echo "---------------------------------------------------------------------"
-  echo "For more info about the license: https://www.elastic.co/subscriptions"
-  echo
-  echo "Updating the license..."
-  $docker elasticsearch >/dev/null 2>&1
-  result=\$(curl -s -X POST "\${ES_LOCAL_URL}/_license/start_basic?acknowledge=true" -H "Authorization: ApiKey \${ES_LOCAL_API_KEY}" -o /dev/null -w '%{http_code}\n')
-  if [ "\$result" = "200" ]; then
-    echo "✅ Basic license successfully installed"
-    echo "ES_LOCAL_LICENSE=basic" >> .env
-  else 
-    echo "Error: I cannot update the license"
-    result=\$(curl -s -X GET "\${ES_LOCAL_URL}" -H "Authorization: ApiKey \${ES_LOCAL_API_KEY}" -o /dev/null -w '%{http_code}\n')
-    if [ "\$result" != "200" ]; then
-      echo "Elasticsearch is not running."
-    fi
-    exit 1
-  fi
-  echo
-fi
-$docker
-EOM
-
-  if [ "$need_wait_for_kibana" = true ]; then
-    cat >> start.sh <<-'EOM'
-wait_for_kibana 120
-EOM
-  fi
-  chmod +x start.sh
-}
-
-# Create the stop script (stop.sh)
-create_stop_file() {
-  cat > stop.sh <<-'EOM'
-#!/bin/sh
-# Stop script for start-local
-# More information: https://github.com/elastic/start-local
-set -eu
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${SCRIPT_DIR}"
-EOM
-
-  cat >> stop.sh <<- EOM
-$docker_stop
-EOM
-  chmod +x stop.sh
-}
-
-# Create the uninstall script (uninstall.sh)
-create_uninstall_file() {
-
-  cat > uninstall.sh <<-'EOM'
-#!/bin/sh
-# Uninstall script for start-local
-# More information: https://github.com/elastic/start-local
-set -eu
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-ask_confirmation() {
-    echo "Do you confirm? (yes/no)"
-    read -r answer
-    case "$answer" in
-        yes|y|Y|Yes|YES)
-            return 0  # true
-            ;;
-        no|n|N|No|NO)
-            return 1  # false
-            ;;
-        *)
-            echo "Please answer yes or no."
-            ask_confirmation  # Ask again if the input is invalid
-            ;;
-    esac
-}
-
-cd "${SCRIPT_DIR}"
-if [ ! -e "docker-compose.yml" ]; then
-  echo "Error: I cannot find the docker-compose.yml file"
-  echo "I cannot uninstall start-local."
-fi
-if [ ! -e ".env" ]; then
-  echo "Error: I cannot find the .env file"
-  echo "I cannot uninstall start-local."
-fi
-echo "This script will uninstall start-local."
-echo "All data will be deleted and cannot be recovered."
-if ask_confirmation; then
-EOM
-
-  cat >> uninstall.sh <<- EOM
-  $docker_clean
-  $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
-  if [ -z "\$(ls -A config)" ]; then
-    rm -d config
-  fi
-  echo
-  echo "Do you want to remove the following Docker images?"
-  echo "- docker.elastic.co/elasticsearch/elasticsearch:${es_version}"
-EOM
-
-  if  [ "$esonly" = "false" ]; then
-    cat >> uninstall.sh <<- EOM
-  echo "- docker.elastic.co/kibana/kibana:${es_version}"
-EOM
-  fi
-
-  if  [ "$edot" = "true" ]; then
-    cat >> uninstall.sh <<- EOM
-  echo "- docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}"
-EOM
-  fi
-
-  cat >> uninstall.sh <<- EOM
-  if ask_confirmation; then
-    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
-      echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
-    else
-      echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
-    fi
-EOM
-
-  if  [ "$esonly" = "false" ]; then
-    cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
-      echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
-    else
-      echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
-    fi
-EOM
-  fi
-
-  if  [ "$edot" = "true" ]; then
-    cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
-      echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
-    else
-      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
-    fi
-EOM
-  fi
-
-  cat >> uninstall.sh <<- EOM
-  fi
-  echo "Start-local successfully removed"
-fi
-EOM
-  chmod +x uninstall.sh
-}
-
-add_edot_config_in_docker_compose() {
-  # Add the OTLP configs in docker-compose.yml
-  cat >> docker-compose.yml <<-'EOM'
-configs:
-  # This is the minimal yaml configuration needed to listen on all interfaces
-  # for OTLP logs, metrics and traces, exporting to Elasticsearch.
-  edot-collector-config:
-    content: |
-      receivers:
-        # Receives data from other Collectors in Agent mode
-        otlp:
-          protocols:
-            grpc:
-              endpoint: 0.0.0.0:4317 # Listen on all interfaces
-            http:
-              endpoint: 0.0.0.0:4318 # Listen on all interfaces
-
-      connectors:
-        elasticapm: {} # Elastic APM Connector
-
-      processors:
-        batch:
-          send_batch_size: 1000
-          timeout: 1s
-          send_batch_max_size: 1500
-        batch/metrics:
-          send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
-          timeout: 1s
-        elastictrace: {} # Elastic Trace Processor
-
-      exporters:
-        debug: {}
-        elasticsearch/otel:
-          endpoints:
-            - http://elasticsearch:9200
-          user: elastic
-          password: ${ES_LOCAL_PASSWORD}
-          tls:
-            insecure_skip_verify: true
-          mapping:
-            mode: otel
-
-      service:
-        pipelines:
-          metrics:
-            receivers: [otlp]
-            processors: [batch/metrics]
-            exporters: [debug, elasticsearch/otel]
-          logs:
-            receivers: [otlp]
-            processors: [batch]
-            exporters: [debug, elasticapm, elasticsearch/otel]
-          traces:
-            receivers: [otlp]
-            processors: [batch, elastictrace]
-            exporters: [debug, elasticapm, elasticsearch/otel]
-          metrics/aggregated-otel-metrics:
-            receivers:
-              - elasticapm
-            processors: [] # No processors defined in the original for this pipeline
-            exporters:
-              - debug
-              - elasticsearch/otel
-
-EOM
-}
-
-add_edot_service_in_docker_composer() {
-  cat >> docker-compose.yml <<-'EOM'
-  edot-collector:
-    image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
-    container_name: ${EDOT_LOCAL_CONTAINER_NAME}
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    command: [
-      "--config=/etc/otelcol-contrib/config.yaml",
-    ]
-    configs:
-      - source: edot-collector-config
-        target: /etc/otelcol-contrib/config.yaml
-    ports:
-      - "4317:4317"  # grpc
-      - "4318:4318"  # http
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/127.0.0.1/4317'"]
-      retries: 300
-      interval: 1s
-EOM
-}
-
-create_docker_compose_file() {
-  # Create the docker-compose.yml file
-  if [ "$edot" = "true" ]; then
-    add_edot_config_in_docker_compose
-  fi
-  cat >> docker-compose.yml <<-'EOM'
-services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
-    container_name: ${ES_LOCAL_CONTAINER_NAME}
-    volumes:
-      - dev-elasticsearch:/usr/share/elasticsearch/data
-    ports:
-      - 127.0.0.1:${ES_LOCAL_PORT}:9200
-    environment:
-      - discovery.type=single-node
-      - ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}
-      - xpack.security.enabled=true
-      - xpack.security.http.ssl.enabled=false
-      - xpack.license.self_generated.type=trial
-      - xpack.ml.use_auto_machine_memory_percent=true
-      - ES_JAVA_OPTS=${ES_LOCAL_JAVA_OPTS}
-      - cluster.routing.allocation.disk.watermark.low=${ES_LOCAL_DISK_SPACE_REQUIRED}
-      - cluster.routing.allocation.disk.watermark.high=${ES_LOCAL_DISK_SPACE_REQUIRED}
-      - cluster.routing.allocation.disk.watermark.flood_stage=${ES_LOCAL_DISK_SPACE_REQUIRED}
-EOM
-  
-  # Fix for JDK AArch64 issue, see https://bugs.openjdk.org/browse/JDK-8345296
-  if is_arm64; then
-  cat >> docker-compose.yml <<-'EOM'
-      - "_JAVA_OPTIONS=-XX:UseSVE=0"
-EOM
-  fi
-
-  # Fix for OCI issue on LXC, see https://github.com/elastic/start-local/issues/27
-  if ! detect_lxc; then
-  cat >> docker-compose.yml <<-'EOM'
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-EOM
-  fi
-
-  cat >> docker-compose.yml <<-'EOM'
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-
-EOM
-
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
-  kibana_settings:
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
-    container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
-    restart: 'no'
-    command: >
-      bash -c '
-        echo "Setup the kibana_system password";
-        start_time=$$(date +%s);
-        timeout=60;
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
-          if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
-            echo "Error: Elasticsearch timeout";
-            exit 1;
-          fi;
-          sleep 2;
-        done;
-      '
-
-  kibana:
-    depends_on:
-      kibana_settings:
-        condition: service_completed_successfully
-    image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}
-    container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
-    volumes:
-      - dev-kibana:/usr/share/kibana/data
-      - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
-    ports:
-      - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
-    environment:
-      - SERVER_NAME=kibana
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_LOCAL_PASSWORD}
-      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
-      - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
-EOM
-
-# Customize the default solution for spaces
-if [ "$edot" = "true" ]; then
-  cat >> docker-compose.yml <<-'EOM'
-      - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
-      - XPACK_SPACES_DEFAULTSOLUTION=oblt
-EOM
-else
-  cat >> docker-compose.yml <<-'EOM'
-      - XPACK_SPACES_DEFAULTSOLUTION=es
-EOM
-fi
-
-  cat >> docker-compose.yml <<-'EOM'
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-
-EOM
-fi
-
-if [ "$edot" = "true" ]; then
-  add_edot_service_in_docker_composer
-fi
-
-  cat >> docker-compose.yml <<-'EOM'
-volumes:
-  dev-elasticsearch:
-EOM
-
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
-  dev-kibana:
-EOM
-fi
-
-create_kibana_config
-}
-
 create_kibana_config() {
+  if [ "$esonly" = "true" ]; then
+    return 0
+  fi
+   
   if [ ! -d "config" ]; then
     mkdir config
   fi
+
   # Create telemetry
   cat > config/telemetry.yml <<- EOM
 start-local:
   version: ${version}
 EOM
+}
+
+create_edot_config() {
+  if [ "$edot" = "false" ]; then
+    return 0
+  fi
+
+  if [ ! -d "$installation_folder/config/edot-collector" ]; then
+    mkdir -p "$installation_folder/config/edot-collector"
+  fi
+
+  # TODO: Inline contents.
+  cp "$script_dir/edot-config.yaml" "$installation_folder/config/edot-collector/config.yaml"
 }
 
 print_steps() {
@@ -991,54 +521,42 @@ print_steps() {
   echo "- Generated random passwords"
   echo "- Created the ${folder} folder containing the files:"
   echo "  - .env, with settings"
-  echo "  - docker-compose.yml, for Docker services"
+  echo "  - configuration files for Kibana and EDOT (if selected)"
   echo "  - start/stop/uninstall commands"
 }
 
-running_docker_compose() {
+initialize_containers() {
   # Execute docker compose
-  echo "- Running ${docker}"
+  echo "- Initializing and starting containers..."
   echo
-  set +e
-  if ! $docker; then
-    error_msg="Error: ${docker} command failed!"
-    echo "$error_msg"
-    if [ "$esonly" = "true" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name}"
-    elif [ "$edot" = "true" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
-    else
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
-    fi
-    cleanup
-    exit 1
-  fi
-  set -e
-}
 
-api_key() {
-  # Create an API key for Elasticsearch
-  api_key=$(create_api_key "$es_password" "$api_key_name")
-  if [ -n "$api_key" ]; then
-    echo "ES_LOCAL_API_KEY=${api_key}" >> .env
+  if ( set +e; ./initialize.sh && ./start.sh ); then
+    return 0
   fi
-}
 
-kibana_wait() {
-  if [ "$need_wait_for_kibana" = true ]; then
-    wait_for_kibana 120
+  error_msg="Error: Container initialization failed!"
+  echo "$error_msg"
+  if [ "$esonly" = "true" ]; then
+    generate_error_log "${error_msg}" "${elasticsearch_container_name}"
+  elif [ "$edot" = "true" ]; then
+    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${edot_container_name}"
+  else
+    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name}"
   fi
+
+  cleanup
+  exit 1
 }
 
 success() {
   echo
   if  [ "$esonly" = "true" ]; then
-    echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
+    echo "🎉 Congrats, Elasticsearch is installed and running!"
   else
     if [ "$edot" = "true" ]; then
-      echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running in Docker!"
+      echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running!"
     else
-      echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
+      echo "🎉 Congrats, Elasticsearch and Kibana are installed and running!"
     fi
     echo
     echo "🌐 Open your browser at http://localhost:5601"
@@ -1052,8 +570,12 @@ success() {
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
   fi
-  if [ -n "$api_key" ]; then
-    echo "🔑 API key: $api_key"
+
+  # Load ES_LOCAL_API_KEY environment variable.
+  . "$installation_folder/.env"
+
+  if [ -n "$ES_LOCAL_API_KEY" ]; then
+    echo "🔑 API key: $ES_LOCAL_API_KEY"
     echo
   else
     echo "🔑 Use basic auth or create an API key"
@@ -1065,33 +587,35 @@ success() {
 }
 
 main() {
-  parse_args "$@"
   startup
+  parse_args "$@"
   check_requirements
+  initialize_container_runtime
   check_installation_folder
-  check_docker_services
+  check_container_services
   create_installation_folder
   generate_passwords
   choose_es_version
-  create_start_file
-  create_stop_file
-  create_uninstall_file
+  create_scripts
   create_env_file
-  create_docker_compose_file
+  create_kibana_config
+  create_edot_config
   print_steps
-  running_docker_compose
-  api_key
-  kibana_wait
+  initialize_containers
   success
 }
 
-ctrl_c() { 
+ctrl_c() {
   cleanup
   exit 1
 }
 
-# Trap ctrl-c
+### Script execution ###############################################################################
+
+# Trap SGIINT and call ctrl_c().
 trap ctrl_c INT
 
-# Execute the script
+# Execute the entry point function.
 main "$@"
+
+####################################################################################################
