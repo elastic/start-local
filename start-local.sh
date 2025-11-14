@@ -438,7 +438,7 @@ check_installation_folder() {
       echo "It seems you have already a start-local installation in '${folder}'."
       if [ -f "$folder/uninstall.sh" ]; then
         echo "I cannot proceed unless you uninstall it, using the following command:"
-        echo "cd $folder && ./uninstall.sh"
+        echo "cd $folder && ./uninstall.sh && cd -"
       else
         echo "I did not find the uninstall.sh file, you need to proceed manually."
         if [ -f "$folder/docker-compose.yml" ] && [ -f "$folder/.env" ]; then
