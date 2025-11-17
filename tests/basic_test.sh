@@ -58,12 +58,12 @@ function test_uninstall_file_exists() {
     assert_file_exists "${UNINSTALL_FILE}"
 }
 
-function test_elasticsearch_is_running() {  
+function test_elasticsearch_is_running() {
     result=$(get_http_response_code "http://localhost:9200" "elastic" "${ES_LOCAL_PASSWORD}")
     assert_equals "200" "$result"
 }
 
-function test_kibana_is_running() {  
+function test_kibana_is_running() {
     result=$(get_http_response_code "http://localhost:5601")
     assert_equals "200" "$result"
 }

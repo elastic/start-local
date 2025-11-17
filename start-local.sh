@@ -14,8 +14,6 @@
 #
 #	http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
@@ -347,13 +345,27 @@ random_password() {
 create_api_key() {
   es_password=$1
   name=$2
-  response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
-  if [ -z "$response" ]; then
-    echo ""
-  else
-    api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
-    echo "$api_key"
-  fi
+  endpoint="http://localhost:9200/_security/api_key"
+  max_retries=${API_KEY_MAX_RETRIES:-30}
+  interval=${API_KEY_RETRY_INTERVAL:-2}
+
+  i=1
+  while [ "$i" -le "$max_retries" ]; do
+    http_code_and_body="$(curl -sS -w "\n%{http_code}" -u "elastic:${es_password}" -X POST "$endpoint" -H "Content-Type: application/json" -d "{\"name\": \"${name}\"}" || true)"
+    http_code="$(printf "%s" "$http_code_and_body" | tail -n 1)"
+    body="$(printf "%s" "$http_code_and_body" | sed '$d')"
+    if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+      api_key="$(echo "$body" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
+      if [ -n "$api_key" ]; then
+        echo "$api_key"
+        return 0
+      fi
+    fi
+    sleep "$interval"
+    i=$((i + 1))
+  done
+  echo ""
+  return 1
 }
 
 # Check if a container is runnning
@@ -731,7 +743,7 @@ EOM
   cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
+  rm docker-compose.yml .env uninstall.sh start.sh stop.sh bootstrap.sh elasticsearch_wait.sh kibana_entrypoint.sh bootstrap_done config/telemetry.yml
   if [ -z "\$(ls -A config)" ]; then
     rm -d config
   fi
@@ -787,6 +799,159 @@ EOM
 fi
 EOM
   chmod +x uninstall.sh
+}
+
+# Create the bootstrap script (bootstrap.sh) used by kibana_settings container
+create_bootstrap_file() {
+  cat > bootstrap.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BOOTSTRAP_DONE_FILE="${BOOTSTRAP_DONE_FILE:-/bootstrap_done}"
+
+if [[ -f "${BOOTSTRAP_DONE_FILE}" ]] && grep -qx '1' "${BOOTSTRAP_DONE_FILE}"; then
+  echo "Bootstrap already completed (${BOOTSTRAP_DONE_FILE} contains marker 1). Exiting."
+  exit 0
+fi
+
+ES_URL="${ELASTICSEARCH_URL:-${ES_URL:-http://elasticsearch:9200}}"
+
+# Require password for the fixed user 'elastic'
+if [[ -z "${SUPERUSER_PASSWORD:-}" ]]; then
+  echo "SUPERUSER_PASSWORD must be set for user 'elastic'" >&2
+  exit 1
+fi
+
+if [[ -z "${KIBANA_PASSWORD:-}" ]]; then
+  echo "KIBANA_PASSWORD must be set to configure 'kibana_system'" >&2
+  exit 1
+fi
+
+echo "Setting password for built-in user 'kibana_system'..."
+payload=$(printf '{"password":"%s"}' "${KIBANA_PASSWORD}")
+user_setup_timeout=${USER_SETUP_TIMEOUT:-120}
+user_end_ts=$(( $(date +%s) + user_setup_timeout ))
+password_url="${ES_URL%/}/_security/user/kibana_system/_password"
+while :; do
+  http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+    --user "elastic:${SUPERUSER_PASSWORD}" \
+    -H 'Content-Type: application/json' \
+    -X POST "${password_url}" \
+    -d "${payload}" || echo "000")
+  if [[ "${http_code}" == "200" || "${http_code}" == "204" ]]; then
+    echo "kibana_system password set successfully."
+    break
+  fi
+  if (( $(date +%s) >= user_end_ts )); then
+    echo "Failed to set kibana_system password within ${user_setup_timeout}s (last HTTP ${http_code})." >&2
+    exit 1
+  fi
+  sleep "${RETRY_INTERVAL}"
+done
+
+# Signal successful bootstrap by writing marker '1'
+echo '1' > "${BOOTSTRAP_DONE_FILE}"
+
+# Best-effort flush
+if command -v sync >/dev/null 2>&1; then
+  sync || true
+fi
+
+echo "Wrote marker '1' to ${BOOTSTRAP_DONE_FILE}. Exiting."
+EOM
+  chmod +x bootstrap.sh
+  chmod 777 bootstrap.sh
+  # Ensure the mapped file exists as a regular file
+  : > bootstrap_done
+}
+
+# Create the Elasticsearch wait script (elasticsearch_wait.sh)
+create_elasticsearch_wait_file() {
+  cat > elasticsearch_wait.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ES_URL="${ELASTICSEARCH_URL:-${ES_URL:-http://elasticsearch:9200}}"
+
+if [[ -z "${SUPERUSER_PASSWORD:-}" ]]; then
+  echo "SUPERUSER_PASSWORD must be set for user 'elastic'" >&2
+  exit 1
+fi
+
+WAIT_FOR_STATUS="${WAIT_FOR_STATUS:-yellow}"
+RETRY_INTERVAL="${RETRY_INTERVAL:-5}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-300}"
+
+curl_opts=(--silent --show-error --fail --user "elastic:${SUPERUSER_PASSWORD}")
+health_url="${ES_URL%/}/_cluster/health?wait_for_status=${WAIT_FOR_STATUS}&timeout=1s"
+
+echo "Waiting for Elasticsearch at ${ES_URL} to reach >= ${WAIT_FOR_STATUS}..."
+start_ts=$(date +%s)
+end_ts=$(( start_ts + WAIT_TIMEOUT ))
+
+while :; do
+  now=$(date +%s)
+  if (( now >= end_ts )); then
+    echo "Timed out after ${WAIT_TIMEOUT}s waiting for Elasticsearch health." >&2
+    exit 1
+  fi
+
+  response="$(curl "${curl_opts[@]}" "${health_url}" || true)"
+  if [[ -n "${response}" ]] && echo "${response}" | grep -qE '"timed_out"\s*:\s*false'; then
+    status=$(echo "${response}" | sed -n 's/.*"status"\s*:\s*"\([^"]\+\)".*/\1/p')
+    echo "Elasticsearch is ready (status=${status:-unknown})."
+    break
+  fi
+
+  sleep "${RETRY_INTERVAL}"
+done
+
+if [[ -z "${ORIGINAL_ENTRYPOINT:-}" ]]; then
+  echo "ORIGINAL_ENTRYPOINT must be set (path to next entrypoint)" >&2
+  exit 1
+fi
+
+exec "${ORIGINAL_ENTRYPOINT}"
+EOM
+  chmod +x elasticsearch_wait.sh
+
+  touch bootstrap_done
+  chmod 777 bootstrap_done
+}
+
+# Create Kibana entrypoint wrapper (kibana_entrypoint.sh)
+create_kibana_entrypoint_file() {
+  cat > kibana_entrypoint.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BOOTSTRAP_DONE_FILE="${BOOTSTRAP_DONE_FILE:-/bootstrap_done}"
+KIBANA_DEFAULT_ENTRYPOINT="${KIBANA_DEFAULT_ENTRYPOINT:-/usr/local/bin/kibana-docker}"
+WAIT_BOOTSTRAP_TIMEOUT="${WAIT_BOOTSTRAP_TIMEOUT:-180}"
+RETRY_INTERVAL="${RETRY_INTERVAL:-5}"
+
+start_ts=$(date +%s)
+end_ts=$(( start_ts + WAIT_BOOTSTRAP_TIMEOUT ))
+echo "Waiting for bootstrap marker '1' in ${BOOTSTRAP_DONE_FILE}..."
+while :; do
+  if [[ -f "${BOOTSTRAP_DONE_FILE}" ]] && grep -qx '1' "${BOOTSTRAP_DONE_FILE}"; then
+    echo "Bootstrap marker detected. Starting Kibana..."
+    break
+  fi
+  if (( $(date +%s) >= end_ts )); then
+    echo "Timeout (${WAIT_BOOTSTRAP_TIMEOUT}s) waiting for bootstrap marker file '${BOOTSTRAP_DONE_FILE}'." >&2
+    exit 1
+  fi
+  sleep "${RETRY_INTERVAL}"
+done
+
+if [[ ! -x "${KIBANA_DEFAULT_ENTRYPOINT}" ]]; then
+  echo "Warning: default Kibana entrypoint '${KIBANA_DEFAULT_ENTRYPOINT}' not executable; attempting exec anyway." >&2
+fi
+
+exec "${KIBANA_DEFAULT_ENTRYPOINT}"
+EOM
+  chmod +x kibana_entrypoint.sh
 }
 
 add_edot_config_in_docker_compose() {
@@ -866,6 +1031,12 @@ add_edot_service_in_docker_composer() {
     command: [
       "--config=/etc/otelcol-contrib/config.yaml",
     ]
+    volumes:
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+    environment:
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=otelcol-contrib
+    entrypoint: ["/elasticsearch_wait.sh"]
     configs:
       - source: edot-collector-config
         target: /etc/otelcol-contrib/config.yaml
@@ -935,7 +1106,6 @@ EOM
       retries: 30
 
 EOM
-
 if  [ "$esonly" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
@@ -944,20 +1114,15 @@ if  [ "$esonly" = "false" ]; then
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
     restart: 'no'
-    command: >
-      bash -c '
-        echo "Setup the kibana_system password";
-        start_time=$$(date +%s);
-        timeout=60;
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
-          if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
-            echo "Error: Elasticsearch timeout";
-            exit 1;
-          fi;
-          sleep 2;
-        done;
-        sleep infinity;
-      '
+    volumes:
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+      - ./bootstrap.sh:/bootstrap.sh:ro
+      - ./bootstrap_done:/bootstrap_done:rw
+    environment:
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
+      - KIBANA_PASSWORD=${KIBANA_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=/bootstrap.sh
+    entrypoint: ["/elasticsearch_wait.sh"]
 
   kibana:
     depends_on:
@@ -967,17 +1132,23 @@ if  [ "$esonly" = "false" ]; then
     volumes:
       - dev-kibana:/usr/share/kibana/data
       - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+      - ./kibana_entrypoint.sh:/kibana_entrypoint.sh:ro
+      - ./bootstrap_done:/bootstrap_done:ro
     ports:
       - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
+    entrypoint: ["/elasticsearch_wait.sh"]
     environment:
       - SERVER_NAME=kibana
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=/kibana_entrypoint.sh
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
 EOM
-
+ 
 # Customize the default solution for spaces
 if [ "$edot" = "true" ]; then
   cat >> docker-compose.yml <<-'EOM'
@@ -1130,6 +1301,9 @@ main() {
   create_start_file
   create_stop_file
   create_uninstall_file
+  create_bootstrap_file
+  create_elasticsearch_wait_file
+  create_kibana_entrypoint_file
   create_env_file
   create_docker_compose_file
   print_steps
