@@ -315,11 +315,37 @@ wait_for_kibana() {
   echo "- Waiting for Kibana to be ready"
   echo
   start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
+  last_curl_exit=""
+  last_http_code=""
+  last_body=""
+  while :; do
+    # Capture body, HTTP status code and curl exit code without tripping set -e
+    http_out=""
+    if http_out="$(curl -sS -w "\n%{http_code}" http://localhost:5601)"; then
+      curl_exit=0
+    else
+      curl_exit=$?
+    fi
+    http_code="$(printf "%s" "$http_out" | tail -n 1)"
+    body="$(printf "%s" "$http_out" | sed '$d')"
+
+    last_curl_exit="$curl_exit"
+    last_http_code="$http_code"
+    last_body="$body"
+
+    if [ "$http_code" = "302" ]; then
+      break
+    fi
+
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
-      error_msg="Error: Kibana timeout of ${timeout} sec"
+      error_msg="Error: Kibana timeout of ${timeout} sec. curl_exit=${last_curl_exit:-} http_status=${last_http_code:-}. Response body:\n${last_body}"
       echo "$error_msg"
+
+      podman container logs "${elasticsearch_container_name}"
+      podman container logs "${kibana_settings_container_name}"
+      podman container logs "${kibana_container_name}"
+
       if [ "$edot" = "true" ]; then
         generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
       else
@@ -328,6 +354,7 @@ wait_for_kibana() {
       cleanup
       exit 1
     fi
+
     sleep 2
   done
 }
@@ -878,6 +905,9 @@ if [[ -z "${SUPERUSER_PASSWORD:-}" ]]; then
   exit 1
 fi
 
+cat /etc/resolv.conf
+curl -v elasticsearch || true
+
 WAIT_FOR_STATUS="${WAIT_FOR_STATUS:-yellow}"
 RETRY_INTERVAL="${RETRY_INTERVAL:-5}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-300}"
@@ -1031,6 +1061,11 @@ add_edot_service_in_docker_composer() {
     command: [
       "--config=/etc/otelcol-contrib/config.yaml",
     ]
+    hostname: edot-collector
+    networks:
+      es-local-net:
+        aliases:
+          - elastic-edot-collector
     volumes:
       - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
     environment:
@@ -1060,6 +1095,11 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${ES_LOCAL_CONTAINER_NAME}
+    hostname: elasticsearch
+    networks:
+      es-local-net:
+        aliases:
+          - elasticsearch
     volumes:
       - dev-elasticsearch:/usr/share/elasticsearch/data
     ports:
@@ -1106,14 +1146,17 @@ EOM
       retries: 30
 
 EOM
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  if  [ "$esonly" = "false" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
       - elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
     restart: 'no'
+    hostname: kibana-settings
+    networks:
+      es-local-net:
     volumes:
       - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
       - ./bootstrap.sh:/bootstrap.sh:ro
@@ -1129,6 +1172,14 @@ if  [ "$esonly" = "false" ]; then
       - kibana_settings
     image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
+    hostname: kibana
+    networks:
+      es-local-net:
+        aliases:
+          - kibana
+    dns_search: []
+    dns_opt:
+      - ndots:0 
     volumes:
       - dev-kibana:/usr/share/kibana/data
       - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
@@ -1149,19 +1200,19 @@ if  [ "$esonly" = "false" ]; then
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
 EOM
  
-# Customize the default solution for spaces
-if [ "$edot" = "true" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+    # Customize the default solution for spaces
+    if [ "$edot" = "true" ]; then
+      cat >> docker-compose.yml <<-'EOM'
       - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
       - XPACK_SPACES_DEFAULTSOLUTION=oblt
 EOM
-else
-  cat >> docker-compose.yml <<-'EOM'
+    else
+      cat >> docker-compose.yml <<-'EOM'
       - XPACK_SPACES_DEFAULTSOLUTION=es
 EOM
-fi
+    fi
 
-  cat >> docker-compose.yml <<-'EOM'
+    cat >> docker-compose.yml <<-'EOM'
     healthcheck:
       test:
         [
@@ -1173,24 +1224,30 @@ fi
       retries: 30
 
 EOM
-fi
+  fi
 
-if [ "$edot" = "true" ]; then
-  add_edot_service_in_docker_composer
-fi
+  if [ "$edot" = "true" ]; then
+    add_edot_service_in_docker_composer
+  fi
 
   cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
 EOM
 
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  if [ "$esonly" = "false" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
 EOM
-fi
+  fi
 
-create_kibana_config
+  cat >> docker-compose.yml <<-'EOM'
+networks:
+  es-local-net:
+    driver: bridge
+EOM
+
+  create_kibana_config
 }
 
 create_kibana_config() {
@@ -1205,7 +1262,7 @@ EOM
 }
 
 print_steps() {
-  if  [ "$esonly" = "true" ]; then
+  if [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
   elif [ "$edot" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
@@ -1250,6 +1307,9 @@ api_key() {
 }
 
 kibana_wait() {
+  if  [ "$esonly" = "true" ]; then
+    return
+  fi
   if [ "$need_wait_for_kibana" = true ]; then
     wait_for_kibana 120
   fi
