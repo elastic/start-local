@@ -69,11 +69,11 @@ function cap () { tee "${1}/capture.out"; }
 # Return the previous output
 function ret () { cat "${1}/capture.out"; }
 
-# Check if a docker service is running
-check_docker_service_running() {
+# Check if a container service is running
+check_container_service_running() {
   local container_name=$1
   local containers
-  containers=$(docker ps --format '{{.Names}}')
+  containers=$($TEST_CONTAINER_CLI ps --format '{{.Names}}')
   if echo "$containers" | grep -q "^${container_name}$"; then
     return 0 # true
   else
@@ -81,10 +81,10 @@ check_docker_service_running() {
   fi
 }
 
-# Check if a docker image exists
-check_docker_image_exists() {
+# Check if a container image exists
+check_container_image_exists() {
   local image_name=$1
-  if docker image inspect "$image_name" > /dev/null 2>&1; then
+  if $TEST_CONTAINER_CLI image inspect "$image_name" > /dev/null 2>&1; then
     return 0 # true
   else
     return 1 # false

@@ -14,8 +14,6 @@
 #
 #	http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
@@ -228,7 +226,9 @@ get_os_info() {
 }
 
 # Check if a command exists
-available() { command -v "$1" >/dev/null; }
+available() {
+  command -v "$1" >/dev/null;
+}
 
 # Revert the status, removing containers, volumes, network and folder
 cleanup() {
@@ -255,10 +255,14 @@ generate_error_log() {
   if [ -n "${msg}" ]; then
     echo "${msg}" > "$error_file"
   fi
+  container_runtime="Docker"
+  if [ "$is_podman" = "true" ]; then
+    container_runtime="Podman"
+  fi
   { 
     echo "Start-local version: ${version}"
-    echo "Docker engine: $(docker --version)"
-    echo "Docker compose: ${docker_version}"
+    echo "$container_runtime engine: $docker_version"
+    echo "$container_runtime compose: $compose_version"
     echo "Elastic Stack version: ${es_version}"
     if [ "$esonly" = "true" ]; then
       echo "--esonly parameter used"
@@ -311,11 +315,37 @@ wait_for_kibana() {
   echo "- Waiting for Kibana to be ready"
   echo
   start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
+  last_curl_exit=""
+  last_http_code=""
+  last_body=""
+  while :; do
+    # Capture body, HTTP status code and curl exit code without tripping set -e
+    http_out=""
+    if http_out="$(curl -sS -w "\n%{http_code}" http://localhost:5601)"; then
+      curl_exit=0
+    else
+      curl_exit=$?
+    fi
+    http_code="$(printf "%s" "$http_out" | tail -n 1)"
+    body="$(printf "%s" "$http_out" | sed '$d')"
+
+    last_curl_exit="$curl_exit"
+    last_http_code="$http_code"
+    last_body="$body"
+
+    if [ "$http_code" = "302" ]; then
+      break
+    fi
+
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
-      error_msg="Error: Kibana timeout of ${timeout} sec"
+      error_msg="Error: Kibana timeout of ${timeout} sec. curl_exit=${last_curl_exit:-} http_status=${last_http_code:-}. Response body:\n${last_body}"
       echo "$error_msg"
+
+      podman container logs "${elasticsearch_container_name}"
+      podman container logs "${kibana_settings_container_name}"
+      podman container logs "${kibana_container_name}"
+
       if [ "$edot" = "true" ]; then
         generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
       else
@@ -324,6 +354,7 @@ wait_for_kibana() {
       cleanup
       exit 1
     fi
+
     sleep 2
   done
 }
@@ -341,20 +372,34 @@ random_password() {
 create_api_key() {
   es_password=$1
   name=$2
-  response="$(curl -s -u "elastic:${es_password}" -X POST http://localhost:9200/_security/api_key -d "{\"name\": \"${name}\"}" -H "Content-Type: application/json")"
-  if [ -z "$response" ]; then
-    echo ""
-  else
-    api_key="$(echo "$response" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
-    echo "$api_key"
-  fi
+  endpoint="http://localhost:9200/_security/api_key"
+  max_retries=${API_KEY_MAX_RETRIES:-30}
+  interval=${API_KEY_RETRY_INTERVAL:-2}
+
+  i=1
+  while [ "$i" -le "$max_retries" ]; do
+    http_code_and_body="$(curl -sS -w "\n%{http_code}" -u "elastic:${es_password}" -X POST "$endpoint" -H "Content-Type: application/json" -d "{\"name\": \"${name}\"}" || true)"
+    http_code="$(printf "%s" "$http_code_and_body" | tail -n 1)"
+    body="$(printf "%s" "$http_code_and_body" | sed '$d')"
+    if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+      api_key="$(echo "$body" | grep -Eo '"encoded":"[A-Za-z0-9+/=]+' | grep -Eo '[A-Za-z0-9+/=]+' | tail -n 1)"
+      if [ -n "$api_key" ]; then
+        echo "$api_key"
+        return 0
+      fi
+    fi
+    sleep "$interval"
+    i=$((i + 1))
+  done
+  echo ""
+  return 1
 }
 
 # Check if a container is runnning
 # parameter: the name of the container
 check_container_running() {
   container_name=$1
-  containers="$(docker ps --format '{{.Names}}')"
+  containers=$($docker_list_containers)
   if echo "$containers" | grep -q "^${container_name}$"; then
     echo "The docker container '$container_name' is already running!"
     echo "You can have only one running at time."
@@ -390,44 +435,94 @@ check_requirements() {
     exit 1
   fi
   need_wait_for_kibana=true
-  # Check for "docker compose" or "docker-compose"
-  set +e
-  if ! docker compose >/dev/null 2>&1; then
-    if ! available "docker-compose"; then
-      if ! available "docker"; then
-        echo "Error: docker command is required"
-        echo "You can install it from https://docs.docker.com/engine/install/."
+
+  # Initialize container runtime commands.
+
+  is_podman=false
+  available "docker" && has_docker=true || has_docker=false
+  available "podman" && has_podman=true || has_podman=false
+
+  if [ "$has_docker" = "false" ] && [ "$has_podman" = "false" ]; then
+    echo "Error: Either Docker or Podman must be installed"
+    echo "You can install docker from https://docs.docker.com/engine/install/."
+    echo "You can install podman from https://podman.io/getting-started/installation/."
+    exit 1
+  fi
+
+  if [ "$has_docker" = "true" ]; then
+    # Use Docker as container runtime.
+
+    docker_version="docker --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+'"
+    docker_list_containers="docker ps --format '{{.Names}}'"
+    docker_remove_image="docker rmi"
+
+    available "docker-compose" && has_docker_compose_v1=true || has_docker_compose_v1=false
+    docker compose version >/dev/null 2>&1 && has_docker_compose_v2=true || has_docker_compose_v2=false
+
+    if [ "$has_docker_compose_v1" = "false" ] && [ "$has_docker_compose_v2" = "false" ]; then
+      echo "Error: Docker Compose is required"
+      echo "You can install it from https://docs.docker.com/compose/install/."
+      exit 1
+    fi
+
+    if [ "$has_docker_compose_v2" = "true" ]; then
+      # docker-compose v2
+
+      compose_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+
+      # --wait option has been introduced in 2.1.1+
+      if [ "$(compare_versions "$compose_version" "2.1.0")" = "gt" ]; then
+        docker_up="docker compose up --wait"
+        need_wait_for_kibana=false
+      else
+        docker_up="docker compose up -d"
+      fi
+
+      docker_stop="docker compose stop"
+      docker_clean="docker compose rm -fsv"
+      docker_remove_volumes="docker compose down -v"
+    else
+      # docker compose v1
+
+      compose_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+
+      if [ "$(compare_versions "$compose_version" "$min_docker_compose")" = "lt" ]; then
+        echo "The minimum required version is of Docker Compose is '$min_docker_compose'. The currently installed version '${compose_version}' is not supported."
+        echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/."
+        cleanup
         exit 1
       fi
-      echo "Error: docker compose is required"
-      echo "You can install it from https://docs.docker.com/compose/install/"
-      exit 1
+
+      docker_up="docker-compose up -d"
+      docker_stop="docker-compose stop"
+      docker_clean="docker-compose rm -fsv"
+      docker_remove_volumes="docker-compose down -v"
     fi
-    docker="docker-compose up -d"
-    docker_stop="docker-compose stop"
-    docker_clean="docker-compose rm -fsv"
-    docker_remove_volumes="docker-compose down -v"
-    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
-      echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
-      echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
-      cleanup
-      exit 1
-    fi 
-  else
-    docker_stop="docker compose stop"
-    docker_clean="docker compose rm -fsv"
-    docker_remove_volumes="docker compose down -v"
-    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-    # --wait option has been introduced in 2.1.1+
-    if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
-      docker="docker compose up --wait"
-      need_wait_for_kibana=false
-    else
-      docker="docker compose up -d"
-    fi
+
+    return
   fi
-  set -e
+
+  available "podman-compose" && has_podman_compose=true || has_podman_compose=false
+
+  if [ "$has_podman_compose" = "false" ]; then
+    echo "Error: Podman Compose is required"
+    echo "You can install it from https://github.com/containers/podman-compose?tab=readme-ov-file#installation."
+    exit 1
+  fi
+
+  compose_version=$(podman-compose version | grep -i 'podman-composer' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+
+  # Use Podman as container runtime.
+  is_podman=true
+  docker_version=$(podman --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+  docker_list_containers="podman ps --format '{{.Names}}'"
+  docker_remove_image="podman rmi"
+  # Podman-compose does not support '--wait'.
+  docker_up="podman-compose up -d"
+  docker_stop="podman-compose stop"
+  # Podman-compose does not support 'rm'.
+  docker_clean="true"
+  docker_remove_volumes="podman-compose down -v"
 }
 
 check_installation_folder() {
@@ -586,7 +681,7 @@ if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   echo "For more info about the license: https://www.elastic.co/subscriptions"
   echo
   echo "Updating the license..."
-  $docker elasticsearch >/dev/null 2>&1
+  $docker_up elasticsearch >/dev/null 2>&1
   result=\$(curl -s -X POST "\${ES_LOCAL_URL}/_license/start_basic?acknowledge=true" -H "Authorization: ApiKey \${ES_LOCAL_API_KEY}" -o /dev/null -w '%{http_code}\n')
   if [ "\$result" = "200" ]; then
     echo "✅ Basic license successfully installed"
@@ -601,7 +696,7 @@ if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
   fi
   echo
 fi
-$docker
+$docker_up
 EOM
 
   if [ "$need_wait_for_kibana" = true ]; then
@@ -675,7 +770,7 @@ EOM
   cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
+  rm docker-compose.yml .env uninstall.sh start.sh stop.sh bootstrap.sh elasticsearch_wait.sh kibana_entrypoint.sh bootstrap_done config/telemetry.yml
   if [ -z "\$(ls -A config)" ]; then
     rm -d config
   fi
@@ -698,7 +793,7 @@ EOM
 
   cat >> uninstall.sh <<- EOM
   if ask_confirmation; then
-    if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
+    if $docker_remove_image "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
       echo "Image docker.elastic.co/elasticsearch/elasticsearch:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elasticsearch/elasticsearch:${es_version}. It might be in use."
@@ -707,7 +802,7 @@ EOM
 
   if  [ "$esonly" = "false" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
+    if $docker_remove_image docker.elastic.co/kibana/kibana:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/kibana/kibana:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/kibana/kibana:${es_version}. It might be in use."
@@ -717,7 +812,7 @@ EOM
 
   if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
+    if $docker_remove_image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
       echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
@@ -731,6 +826,162 @@ EOM
 fi
 EOM
   chmod +x uninstall.sh
+}
+
+# Create the bootstrap script (bootstrap.sh) used by kibana_settings container
+create_bootstrap_file() {
+  cat > bootstrap.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BOOTSTRAP_DONE_FILE="${BOOTSTRAP_DONE_FILE:-/bootstrap_done}"
+
+if [[ -f "${BOOTSTRAP_DONE_FILE}" ]] && grep -qx '1' "${BOOTSTRAP_DONE_FILE}"; then
+  echo "Bootstrap already completed (${BOOTSTRAP_DONE_FILE} contains marker 1). Exiting."
+  exit 0
+fi
+
+ES_URL="${ELASTICSEARCH_URL:-${ES_URL:-http://elasticsearch:9200}}"
+
+# Require password for the fixed user 'elastic'
+if [[ -z "${SUPERUSER_PASSWORD:-}" ]]; then
+  echo "SUPERUSER_PASSWORD must be set for user 'elastic'" >&2
+  exit 1
+fi
+
+if [[ -z "${KIBANA_PASSWORD:-}" ]]; then
+  echo "KIBANA_PASSWORD must be set to configure 'kibana_system'" >&2
+  exit 1
+fi
+
+echo "Setting password for built-in user 'kibana_system'..."
+payload=$(printf '{"password":"%s"}' "${KIBANA_PASSWORD}")
+user_setup_timeout=${USER_SETUP_TIMEOUT:-120}
+user_end_ts=$(( $(date +%s) + user_setup_timeout ))
+password_url="${ES_URL%/}/_security/user/kibana_system/_password"
+while :; do
+  http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+    --user "elastic:${SUPERUSER_PASSWORD}" \
+    -H 'Content-Type: application/json' \
+    -X POST "${password_url}" \
+    -d "${payload}" || echo "000")
+  if [[ "${http_code}" == "200" || "${http_code}" == "204" ]]; then
+    echo "kibana_system password set successfully."
+    break
+  fi
+  if (( $(date +%s) >= user_end_ts )); then
+    echo "Failed to set kibana_system password within ${user_setup_timeout}s (last HTTP ${http_code})." >&2
+    exit 1
+  fi
+  sleep "${RETRY_INTERVAL}"
+done
+
+# Signal successful bootstrap by writing marker '1'
+echo '1' > "${BOOTSTRAP_DONE_FILE}"
+
+# Best-effort flush
+if command -v sync >/dev/null 2>&1; then
+  sync || true
+fi
+
+echo "Wrote marker '1' to ${BOOTSTRAP_DONE_FILE}. Exiting."
+EOM
+  chmod +x bootstrap.sh
+  chmod 777 bootstrap.sh
+  # Ensure the mapped file exists as a regular file
+  : > bootstrap_done
+}
+
+# Create the Elasticsearch wait script (elasticsearch_wait.sh)
+create_elasticsearch_wait_file() {
+  cat > elasticsearch_wait.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ES_URL="${ELASTICSEARCH_URL:-${ES_URL:-http://elasticsearch:9200}}"
+
+if [[ -z "${SUPERUSER_PASSWORD:-}" ]]; then
+  echo "SUPERUSER_PASSWORD must be set for user 'elastic'" >&2
+  exit 1
+fi
+
+cat /etc/resolv.conf
+curl -v elasticsearch || true
+
+WAIT_FOR_STATUS="${WAIT_FOR_STATUS:-yellow}"
+RETRY_INTERVAL="${RETRY_INTERVAL:-5}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-300}"
+
+curl_opts=(--silent --show-error --fail --user "elastic:${SUPERUSER_PASSWORD}")
+health_url="${ES_URL%/}/_cluster/health?wait_for_status=${WAIT_FOR_STATUS}&timeout=1s"
+
+echo "Waiting for Elasticsearch at ${ES_URL} to reach >= ${WAIT_FOR_STATUS}..."
+start_ts=$(date +%s)
+end_ts=$(( start_ts + WAIT_TIMEOUT ))
+
+while :; do
+  now=$(date +%s)
+  if (( now >= end_ts )); then
+    echo "Timed out after ${WAIT_TIMEOUT}s waiting for Elasticsearch health." >&2
+    exit 1
+  fi
+
+  response="$(curl "${curl_opts[@]}" "${health_url}" || true)"
+  if [[ -n "${response}" ]] && echo "${response}" | grep -qE '"timed_out"\s*:\s*false'; then
+    status=$(echo "${response}" | sed -n 's/.*"status"\s*:\s*"\([^"]\+\)".*/\1/p')
+    echo "Elasticsearch is ready (status=${status:-unknown})."
+    break
+  fi
+
+  sleep "${RETRY_INTERVAL}"
+done
+
+if [[ -z "${ORIGINAL_ENTRYPOINT:-}" ]]; then
+  echo "ORIGINAL_ENTRYPOINT must be set (path to next entrypoint)" >&2
+  exit 1
+fi
+
+exec "${ORIGINAL_ENTRYPOINT}"
+EOM
+  chmod +x elasticsearch_wait.sh
+
+  touch bootstrap_done
+  chmod 777 bootstrap_done
+}
+
+# Create Kibana entrypoint wrapper (kibana_entrypoint.sh)
+create_kibana_entrypoint_file() {
+  cat > kibana_entrypoint.sh <<-'EOM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BOOTSTRAP_DONE_FILE="${BOOTSTRAP_DONE_FILE:-/bootstrap_done}"
+KIBANA_DEFAULT_ENTRYPOINT="${KIBANA_DEFAULT_ENTRYPOINT:-/usr/local/bin/kibana-docker}"
+WAIT_BOOTSTRAP_TIMEOUT="${WAIT_BOOTSTRAP_TIMEOUT:-180}"
+RETRY_INTERVAL="${RETRY_INTERVAL:-5}"
+
+start_ts=$(date +%s)
+end_ts=$(( start_ts + WAIT_BOOTSTRAP_TIMEOUT ))
+echo "Waiting for bootstrap marker '1' in ${BOOTSTRAP_DONE_FILE}..."
+while :; do
+  if [[ -f "${BOOTSTRAP_DONE_FILE}" ]] && grep -qx '1' "${BOOTSTRAP_DONE_FILE}"; then
+    echo "Bootstrap marker detected. Starting Kibana..."
+    break
+  fi
+  if (( $(date +%s) >= end_ts )); then
+    echo "Timeout (${WAIT_BOOTSTRAP_TIMEOUT}s) waiting for bootstrap marker file '${BOOTSTRAP_DONE_FILE}'." >&2
+    exit 1
+  fi
+  sleep "${RETRY_INTERVAL}"
+done
+
+if [[ ! -x "${KIBANA_DEFAULT_ENTRYPOINT}" ]]; then
+  echo "Warning: default Kibana entrypoint '${KIBANA_DEFAULT_ENTRYPOINT}' not executable; attempting exec anyway." >&2
+fi
+
+exec "${KIBANA_DEFAULT_ENTRYPOINT}"
+EOM
+  chmod +x kibana_entrypoint.sh
 }
 
 add_edot_config_in_docker_compose() {
@@ -806,11 +1057,21 @@ add_edot_service_in_docker_composer() {
     image: docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}
     container_name: ${EDOT_LOCAL_CONTAINER_NAME}
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     command: [
       "--config=/etc/otelcol-contrib/config.yaml",
     ]
+    hostname: edot-collector
+    networks:
+      es-local-net:
+        aliases:
+          - elastic-edot-collector
+    volumes:
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+    environment:
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=otelcol-contrib
+    entrypoint: ["/elasticsearch_wait.sh"]
     configs:
       - source: edot-collector-config
         target: /etc/otelcol-contrib/config.yaml
@@ -834,6 +1095,11 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${ES_LOCAL_CONTAINER_NAME}
+    hostname: elasticsearch
+    networks:
+      es-local-net:
+        aliases:
+          - elasticsearch
     volumes:
       - dev-elasticsearch:/usr/share/elasticsearch/data
     ports:
@@ -859,7 +1125,7 @@ EOM
   fi
 
   # Fix for OCI issue on LXC, see https://github.com/elastic/start-local/issues/27
-  if ! detect_lxc; then
+  if ! detect_lxc && [ "$is_podman" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
     ulimits:
       memlock:
@@ -880,63 +1146,73 @@ EOM
       retries: 30
 
 EOM
-
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  if  [ "$esonly" = "false" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   kibana_settings:
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_SETTINGS_CONTAINER_NAME}
     restart: 'no'
-    command: >
-      bash -c '
-        echo "Setup the kibana_system password";
-        start_time=$$(date +%s);
-        timeout=60;
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
-          if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
-            echo "Error: Elasticsearch timeout";
-            exit 1;
-          fi;
-          sleep 2;
-        done;
-      '
+    hostname: kibana-settings
+    networks:
+      es-local-net:
+    volumes:
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+      - ./bootstrap.sh:/bootstrap.sh:ro
+      - ./bootstrap_done:/bootstrap_done:rw
+    environment:
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
+      - KIBANA_PASSWORD=${KIBANA_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=/bootstrap.sh
+    entrypoint: ["/elasticsearch_wait.sh"]
 
   kibana:
     depends_on:
-      kibana_settings:
-        condition: service_completed_successfully
+      - kibana_settings
     image: docker.elastic.co/kibana/kibana:${ES_LOCAL_VERSION}
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
+    hostname: kibana
+    networks:
+      es-local-net:
+        aliases:
+          - kibana
+    dns_search: []
+    dns_opt:
+      - ndots:0 
     volumes:
       - dev-kibana:/usr/share/kibana/data
       - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
+      - ./elasticsearch_wait.sh:/elasticsearch_wait.sh:ro
+      - ./kibana_entrypoint.sh:/kibana_entrypoint.sh:ro
+      - ./bootstrap_done:/bootstrap_done:ro
     ports:
       - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
+    entrypoint: ["/elasticsearch_wait.sh"]
     environment:
       - SERVER_NAME=kibana
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_LOCAL_PASSWORD}
+      - ORIGINAL_ENTRYPOINT=/kibana_entrypoint.sh
+      - SUPERUSER_PASSWORD=${ES_LOCAL_PASSWORD}
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
       - ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}
 EOM
-
-# Customize the default solution for spaces
-if [ "$edot" = "true" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+ 
+    # Customize the default solution for spaces
+    if [ "$edot" = "true" ]; then
+      cat >> docker-compose.yml <<-'EOM'
       - MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED=true
       - XPACK_SPACES_DEFAULTSOLUTION=oblt
 EOM
-else
-  cat >> docker-compose.yml <<-'EOM'
+    else
+      cat >> docker-compose.yml <<-'EOM'
       - XPACK_SPACES_DEFAULTSOLUTION=es
 EOM
-fi
+    fi
 
-  cat >> docker-compose.yml <<-'EOM'
+    cat >> docker-compose.yml <<-'EOM'
     healthcheck:
       test:
         [
@@ -948,24 +1224,30 @@ fi
       retries: 30
 
 EOM
-fi
+  fi
 
-if [ "$edot" = "true" ]; then
-  add_edot_service_in_docker_composer
-fi
+  if [ "$edot" = "true" ]; then
+    add_edot_service_in_docker_composer
+  fi
 
   cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
 EOM
 
-if  [ "$esonly" = "false" ]; then
-  cat >> docker-compose.yml <<-'EOM'
+  if [ "$esonly" = "false" ]; then
+    cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
 EOM
-fi
+  fi
 
-create_kibana_config
+  cat >> docker-compose.yml <<-'EOM'
+networks:
+  es-local-net:
+    driver: bridge
+EOM
+
+  create_kibana_config
 }
 
 create_kibana_config() {
@@ -980,7 +1262,7 @@ EOM
 }
 
 print_steps() {
-  if  [ "$esonly" = "true" ]; then
+  if [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
   elif [ "$edot" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
@@ -997,11 +1279,11 @@ print_steps() {
 
 running_docker_compose() {
   # Execute docker compose
-  echo "- Running ${docker}"
+  echo "- Running ${docker_up}"
   echo
   set +e
-  if ! $docker; then
-    error_msg="Error: ${docker} command failed!"
+  if ! $docker_up; then
+    error_msg="Error: ${docker_up} command failed!"
     echo "$error_msg"
     if [ "$esonly" = "true" ]; then
       generate_error_log "${error_msg}" "${elasticsearch_container_name}"
@@ -1025,6 +1307,9 @@ api_key() {
 }
 
 kibana_wait() {
+  if  [ "$esonly" = "true" ]; then
+    return
+  fi
   if [ "$need_wait_for_kibana" = true ]; then
     wait_for_kibana 120
   fi
@@ -1076,6 +1361,9 @@ main() {
   create_start_file
   create_stop_file
   create_uninstall_file
+  create_bootstrap_file
+  create_elasticsearch_wait_file
+  create_kibana_entrypoint_file
   create_env_file
   create_docker_compose_file
   print_steps
