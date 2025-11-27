@@ -26,7 +26,7 @@ ES_VERSION="8.17.0"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh" "-v" "${ES_VERSION}"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}" "-v" "${ES_VERSION}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }

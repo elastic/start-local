@@ -25,7 +25,7 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh" "--esonly"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}" "--esonly"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -39,8 +39,8 @@ function test_kibana_is_not_in_env() {
     assert_file_not_contains "${ENV_PATH}" "KIBANA_"
 }
 
-function test_kibana_docker_is_not_running() {  
-    containers="$(docker ps --format '{{.Names}}')"
+function test_kibana_container_is_not_running() {  
+    containers="$($TEST_CONTAINER_CLI ps --format '{{.Names}}')"
     assert_not_contains "kibana" "$containers"
 }
 
