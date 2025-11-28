@@ -19,7 +19,6 @@
 CURRENT_DIR=$(pwd)
 DEFAULT_DIR="${CURRENT_DIR}/elastic-start-local"
 ENV_PATH="${DEFAULT_DIR}/.env"
-DOCKER_COMPOSE_FILE="${DEFAULT_DIR}/docker-compose.yml"
 START_FILE="${DEFAULT_DIR}/start.sh"
 STOP_FILE="${DEFAULT_DIR}/stop.sh"
 UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
@@ -28,7 +27,7 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -36,10 +35,6 @@ function set_up_before_script() {
 function tear_down_after_script() {
     printf "yes\nno\n" | "${DEFAULT_DIR}/uninstall.sh"
     rm -rf "${DEFAULT_DIR}"
-}
-
-function test_docker_compose_file_exists() {
-    assert_file_exists "${DOCKER_COMPOSE_FILE}"
 }
 
 function test_env_file_exists() {
@@ -58,12 +53,12 @@ function test_uninstall_file_exists() {
     assert_file_exists "${UNINSTALL_FILE}"
 }
 
-function test_elasticsearch_is_running() {  
+function test_elasticsearch_is_running() {
     result=$(get_http_response_code "http://localhost:9200" "elastic" "${ES_LOCAL_PASSWORD}")
     assert_equals "200" "$result"
 }
 
-function test_kibana_is_running() {  
+function test_kibana_is_running() {
     result=$(get_http_response_code "http://localhost:5601")
     assert_equals "200" "$result"
 }

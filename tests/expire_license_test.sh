@@ -24,7 +24,7 @@ ENV_PATH="${DEFAULT_DIR}/.env"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -40,7 +40,7 @@ function test_start_with_expired_license() {
     assert_equals "$license" "trial"
     
     # Change the expire date in start.sh
-    sed -i -E 's/-gt [0-9]+/-gt 1/' "${DEFAULT_DIR}/start.sh"
+    sed -r -i 's/^(ES_LOCAL_LICENSE_EXPIRE_DATE=)[0-9]+$/\10/' "${ENV_PATH}"
     "${DEFAULT_DIR}/start.sh"
 
     # Check license is basic

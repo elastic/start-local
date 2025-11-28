@@ -25,7 +25,7 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -38,14 +38,13 @@ function tear_down_after_script() {
 function test_stop() {
     "${TEST_DIR}/${DEFAULT_DIR}/stop.sh"
 
-    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
+    assert_exit_code "1" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running kibana-local-dev)"
 }
 
 function test_start() {
     "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
 
-    assert_exit_code "0" "$(check_docker_service_running es-local-dev)"
-    assert_exit_code "0" "$(check_docker_service_running kibana-local-dev)"
+    assert_exit_code "0" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "0" "$(check_container_service_running kibana-local-dev)"
 }

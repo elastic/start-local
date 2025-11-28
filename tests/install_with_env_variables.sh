@@ -33,7 +33,7 @@ function tear_down() {
 
 function test_with_es_local_password_env() {
     password="supersecret"
-    ES_LOCAL_PASSWORD="${password}" sh -c "${CURRENT_DIR}/start-local.sh"
+    ES_LOCAL_PASSWORD="${password}" sh -c "${CURRENT_DIR}/${SCRIPT_FILE}"
     assert_file_contains "${ENV_PATH}" "ES_LOCAL_PASSWORD=${password}"
     result=$(get_http_response_code "http://localhost:9200" "elastic" "${password}")
     assert_equals "200" "$result"
@@ -43,7 +43,7 @@ function test_with_es_local_dir_env() {
     dir="test-another-folder"
     DEFAULT_DIR="${CURRENT_DIR}/${dir}"
     UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
-    ES_LOCAL_DIR="${dir}" sh -c "${CURRENT_DIR}/start-local.sh"
+    ES_LOCAL_DIR="${dir}" sh -c "${CURRENT_DIR}/${SCRIPT_FILE}"
     assert_directory_exists "${DEFAULT_DIR}"
     assert_file_exists "${UNINSTALL_FILE}"
 }
