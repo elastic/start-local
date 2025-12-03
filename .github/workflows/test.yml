@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    name: "Test on ${{ matrix.os }}"
+    name: "Test on ${{ matrix.os }} (Docker)"
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -38,7 +38,7 @@ jobs:
         ./lib/bashunit
 
   test-podman:
-    name: "Test on ${{ matrix.os }} with Podman: ${{ matrix.podman }}"
+    name: "Test on ${{ matrix.os }} (Podman)"
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -47,7 +47,6 @@ jobs:
         os:
           - ubuntu-22.04
           - ubuntu-24.04
-        podman: [true, false]
 
     steps:
     - name: Checkout
@@ -58,7 +57,6 @@ jobs:
         curl -s https://bashunit.typeddevs.com/install.sh | bash
    
     - name: Set up Podman
-      if: matrix.podman == true
       run: |
         sudo snap remove docker
         sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-ce docker-ce-cli
@@ -67,6 +65,6 @@ jobs:
     - name: Run the tests
       env:
         SCRIPT_FILE: 'start-local-podman.sh'
-        TEST_CONTAINER_CLI: ${{ matrix.podman && 'podman' || 'docker' }}
+        TEST_CONTAINER_CLI: podman
       run: |
         ./lib/bashunit
