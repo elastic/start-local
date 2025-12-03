@@ -24,7 +24,7 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up_before_script() {
-    sh "${CURRENT_DIR}/start-local.sh" "--edot"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}" "--edot"
 }
 
 function tear_down_after_script() {

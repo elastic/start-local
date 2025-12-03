@@ -25,7 +25,7 @@ UNINSTALL_FILE="${DEFAULT_DIR}/uninstall.sh"
 source "${CURRENT_DIR}/tests/utility.sh"
 
 function set_up() {
-    sh "${CURRENT_DIR}/start-local.sh"
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
@@ -36,32 +36,29 @@ function tear_down() {
 
 function test_uninstall_outside_installation_folder() {
     printf "yes\nno\n" | "${UNINSTALL_FILE}"
-    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
+    assert_exit_code "1" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running kibana-local-dev)"
     assert_is_directory_empty "${TEST_DIR}/${DEFAULT_DIR}"
-    assert_exit_code "0" "$(check_docker_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
-    assert_exit_code "0" "$(check_docker_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "0" "$(check_container_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "0" "$(check_container_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
 }
 
 function test_uninstall_in_installation_folder() {
     cd "${DEFAULT_DIR}" || exit
     printf "yes\nno\n" | ./uninstall.sh
-    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
+    assert_exit_code "1" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running kibana-local-dev)"
     assert_is_directory_empty "${DEFAULT_DIR}"
-    assert_exit_code "0" "$(check_docker_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
-    assert_exit_code "0" "$(check_docker_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "0" "$(check_container_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "0" "$(check_container_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
 }
 
 function test_uninstall_remove_images() {
     cd "${DEFAULT_DIR}" || exit
     printf "yes\nyes\n" | ./uninstall.sh
-    assert_exit_code "1" "$(check_docker_service_running es-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-dev)"
-    assert_exit_code "1" "$(check_docker_service_running kibana-local-settings)"
+    assert_exit_code "1" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running kibana-local-dev)"
     assert_is_directory_empty "${DEFAULT_DIR}"
-    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
-    assert_exit_code "1" "$(check_docker_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "1" "$(check_container_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "1" "$(check_container_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
 }

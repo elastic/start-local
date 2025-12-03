@@ -4,19 +4,50 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
+    branches:
+      - main
     paths-ignore:
       - 'README.md'
       - '.editorconfig'
 
 jobs:
   test:
-    name: Test
+    name: "Test on ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install bashunit
+      run: |
+        curl -s https://bashunit.typeddevs.com/install.sh | bash
+
+    - name: Run the tests
+      env:
+        SCRIPT_FILE: 'start-local.sh'
+        TEST_CONTAINER_CLI: docker
+      run: |
+        ./lib/bashunit
+
+  test-podman:
+    name: "Test on ${{ matrix.os }} with Podman: ${{ matrix.podman }}"
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+        podman: [true, false]
 
     steps:
     - name: Checkout
@@ -26,6 +57,16 @@ jobs:
       run: |
         curl -s https://bashunit.typeddevs.com/install.sh | bash
    
+    - name: Set up Podman
+      if: matrix.podman == true
+      run: |
+        sudo snap remove docker
+        sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-ce docker-ce-cli
+        sudo apt-get -y install podman
+
     - name: Run the tests
+      env:
+        SCRIPT_FILE: 'start-local-podman.sh'
+        TEST_CONTAINER_CLI: ${{ matrix.podman && 'podman' || 'docker' }}
       run: |
         ./lib/bashunit

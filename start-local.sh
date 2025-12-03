@@ -493,6 +493,9 @@ choose_es_version() {
 }
 
 create_env_file() {
+  today=$(date +%s)
+  license_expire=$((today + 3600*24*30))
+
   # Create the .env file
   cat > .env <<- EOM
 START_LOCAL_VERSION=$version
@@ -502,6 +505,7 @@ ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
 ES_LOCAL_DISK_SPACE_REQUIRED=1gb
+ES_LOCAL_LICENSE_EXPIRE_DATE=$license_expire
 EOM
 
   if [ "$edot" = "true" ]; then
@@ -529,9 +533,6 @@ EOM
 # Create the start script (start.sh)
 # including the license update if trial expired
 create_start_file() {
-  today=$(date +%s)
-  expire=$((today + 3600*24*30))
-
   cat > start.sh <<-'EOM'
 #!/bin/sh
 # Start script for start-local
@@ -576,7 +577,7 @@ EOM
   fi
 
   cat >> start.sh <<- EOM
-if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt $expire ]; then
+if [ -z "\${ES_LOCAL_LICENSE:-}" ] && [ "\$today" -gt "\$ES_LOCAL_LICENSE_EXPIRE_DATE" ]; then
   echo "---------------------------------------------------------------------"
   echo "The one-month trial period has expired. You can continue using the"
   echo "Free and open Basic license or request to extend the trial for"
