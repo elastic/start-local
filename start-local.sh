@@ -90,7 +90,7 @@ startup() {
   echo
 
   # Version
-  version="0.12.0"
+  version="0.13.0"
 
   # Folder name for the installation
   installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
@@ -839,6 +839,9 @@ services:
       - dev-elasticsearch:/usr/share/elasticsearch/data
     ports:
       - 127.0.0.1:${ES_LOCAL_PORT}:9200
+    extra_hosts:
+      - host.docker.internal:host-gateway
+      - model-runner.docker.internal:host-gateway
     environment:
       - discovery.type=single-node
       - ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}
@@ -916,6 +919,9 @@ if  [ "$esonly" = "false" ]; then
       - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
     ports:
       - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
+    extra_hosts:
+      - host.docker.internal:host-gateway
+      - model-runner.docker.internal:host-gateway
     environment:
       - SERVER_NAME=kibana
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
