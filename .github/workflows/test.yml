@@ -36,6 +36,7 @@ jobs:
         TEST_CONTAINER_CLI: docker
       run: |
         ./lib/bashunit
+        ./lib/bashunit test tests/docker
 
   test-podman:
     name: "Test on ${{ matrix.os }} with Podman: ${{ matrix.podman }}"
