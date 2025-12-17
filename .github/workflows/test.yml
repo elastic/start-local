@@ -30,12 +30,19 @@ jobs:
       run: |
         curl -s https://bashunit.typeddevs.com/install.sh | bash
 
-    - name: Run the tests
+    - name: Run the common tests
       env:
         SCRIPT_FILE: 'start-local.sh'
         TEST_CONTAINER_CLI: docker
       run: |
         ./lib/bashunit
+
+    - name: Run the docker-specific tests
+      env:
+        SCRIPT_FILE: 'start-local.sh'
+        TEST_CONTAINER_CLI: docker
+      run: |
+        ./lib/bashunit test tests/docker/*
 
   test-podman:
     name: "Test on ${{ matrix.os }} with Podman: ${{ matrix.podman }}"

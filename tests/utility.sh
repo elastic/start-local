@@ -70,7 +70,7 @@ function cap () { tee "${1}/capture.out"; }
 function ret () { cat "${1}/capture.out"; }
 
 # Check if a container service is running
-check_container_service_running() {
+function check_container_service_running() {
   local container_name=$1
   local containers
   containers=$($TEST_CONTAINER_CLI ps --format '{{.Names}}')
@@ -82,7 +82,7 @@ check_container_service_running() {
 }
 
 # Check if a container image exists
-check_container_image_exists() {
+function check_container_image_exists() {
   local image_name=$1
   if $TEST_CONTAINER_CLI image inspect "$image_name" > /dev/null 2>&1; then
     return 0 # true
