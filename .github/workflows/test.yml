@@ -42,7 +42,7 @@ jobs:
         SCRIPT_FILE: 'start-local.sh'
         TEST_CONTAINER_CLI: docker
       run: |
-        ./lib/bashunit test tests/docker
+        ./lib/bashunit test tests/docker/*
 
   test-podman:
     name: "Test on ${{ matrix.os }} with Podman: ${{ matrix.podman }}"
