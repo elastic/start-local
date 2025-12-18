@@ -33,7 +33,8 @@ function set_up_before_script() {
     PYTHON_HTTP_SERVER_PID=$!
     disown "$PYTHON_HTTP_SERVER_PID"
     sleep 2
-    curl -fsSL "http://localhost:8000/${SCRIPT_FILE}" | sh
+    # shellcheck disable=SC2086
+    curl -fsSL "http://localhost:8000/${SCRIPT_FILE}" | sh -s -- ${SCRIPT_EXTRA_ARGS}
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }

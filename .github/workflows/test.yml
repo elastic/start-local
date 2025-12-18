@@ -74,6 +74,7 @@ jobs:
     - name: Run the tests
       env:
         SCRIPT_FILE: 'start-local-podman.sh'
+        SCRIPT_EXTRA_ARGS: ' --docker'
         TEST_CONTAINER_CLI: ${{ matrix.podman && 'podman' || 'docker' }}
       run: |
         ./lib/bashunit

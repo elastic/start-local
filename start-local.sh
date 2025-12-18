@@ -26,6 +26,7 @@ parse_args() {
   #parameters
   esonly=false
   edot=false
+  docker=false
   # Parse the script parameters
   while [ "$#" -gt 0 ]; do
     case "$1" in
