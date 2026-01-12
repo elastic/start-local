@@ -353,11 +353,20 @@ EOF
 }
 
 initialize_container_runtime() {
+  # For development purposes, allow to force Docker even in this script.
+  allow_docker=false
+
   available "docker" && has_docker=true || has_docker=false
   available "podman" && has_podman=true || has_podman=false
 
+  if [ "$allow_docker" = "false" ] && [ "$has_podman" = "false" ]; then
+    echo "Error: Podman is not installed."
+    echo "You can install Podman from https://podman.io/getting-started/installation/."
+    exit 1
+  fi
+
   if [ "$has_docker" = "false" ] && [ "$has_podman" = "false" ]; then
-    echo "Error: Either Docker or Podman must be installed"
+    echo "Error: Either Docker or Podman must be installed."
     echo "You can install Docker from https://docs.docker.com/engine/install/."
     echo "You can install Podman from https://podman.io/getting-started/installation/."
     exit 1
