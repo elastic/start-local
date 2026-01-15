@@ -676,7 +676,7 @@ EOM
   cat >> uninstall.sh <<- EOM
   $docker_clean
   $docker_remove_volumes
-  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/telemetry.yml
+  rm docker-compose.yml .env uninstall.sh start.sh stop.sh config/kibana.yml config/telemetry.yml
   if [ -z "\$(ls -A config)" ]; then
     rm -d config
   fi
@@ -916,6 +916,7 @@ if  [ "$esonly" = "false" ]; then
     container_name: ${KIBANA_LOCAL_CONTAINER_NAME}
     volumes:
       - dev-kibana:/usr/share/kibana/data
+      - ./config/kibana.yml:/usr/share/kibana/config/kibana.yml
       - ./config/telemetry.yml:/usr/share/kibana/config/telemetry.yml
     ports:
       - 127.0.0.1:${KIBANA_LOCAL_PORT}:5601
@@ -979,7 +980,38 @@ create_kibana_config() {
   if [ ! -d "config" ]; then
     mkdir config
   fi
-  # Create telemetry
+
+  # Create Kibana config with predefined connectors
+  cat > config/kibana.yml <<- EOM
+# LLM config
+xpack.actions.enabledActionTypes:
+  ['.gen-ai', '.bedrock', '.gemini', '.inference', '.mcp']
+
+# Elastic Managed LLMs to be enbaled via Cloud Connect
+xpack.actions.preconfigured:
+  Anthropic-Claude-Sonnet-3-7:
+    name: Anthropic Claude Sonnet 3.7
+    actionTypeId: .inference
+    exposeConfig: true
+    config:
+      provider: "elastic"
+      taskType: "chat_completion"
+      inferenceId: ".rainbow-sprinkles-elastic"
+      providerConfig:
+        model_id: "rainbow-sprinkles"
+  Anthropic-Claude-Sonnet-4-5:
+    name: Anthropic Claude Sonnet 4.5
+    actionTypeId: .inference
+    exposeConfig: true
+    config:
+      provider: "elastic"
+      taskType: "chat_completion"
+      inferenceId: ".gp-llm-v2-chat_completion"
+      providerConfig:
+        model_id: "gp-llm-v2"
+EOM
+
+  # Create telemetry config
   cat > config/telemetry.yml <<- EOM
 start-local:
   version: ${version}
