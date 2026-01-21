@@ -772,7 +772,7 @@ configs:
         batch/metrics:
           send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
           timeout: 1s
-        elastictrace: {} # Elastic Trace Processor
+        elasticapm: {} # Elastic APM Processor
 
       exporters:
         debug: {}
@@ -799,7 +799,7 @@ configs:
             exporters: [debug, elasticapm, elasticsearch/otel]
           traces:
             receivers: [otlp]
-            processors: [batch, elastictrace]
+            processors: [batch, elasticapm]
             exporters: [debug, elasticapm, elasticsearch/otel]
           metrics/aggregated-otel-metrics:
             receivers:
