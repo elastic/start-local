@@ -735,8 +735,12 @@ EOM
 }
 
 add_edot_config_in_docker_compose() {
+  trace_processor_name="elasticapm"
+  if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
+    trace_processor_name="elastictrace"
+  fi
   # Add the OTLP configs in docker-compose.yml
-  cat >> docker-compose.yml <<-'EOM'
+  cat >> docker-compose.yml <<-EOM
 configs:
   # This is the minimal yaml configuration needed to listen on all interfaces
   # for OTLP logs, metrics and traces, exporting to Elasticsearch.
@@ -746,7 +750,7 @@ configs:
         apmconfig:
           source:
             elasticsearch:
-              endpoint: http://elastic:${ES_LOCAL_PASSWORD}@elasticsearch:9200
+              endpoint: http://elastic:\${ES_LOCAL_PASSWORD}@elasticsearch:9200
               cache_duration: 10s
           opamp:
             protocols:
@@ -772,7 +776,7 @@ configs:
         batch/metrics:
           send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
           timeout: 1s
-        elasticapm: {} # Elastic APM Processor
+        ${trace_processor_name}: {}
 
       exporters:
         debug: {}
@@ -780,7 +784,7 @@ configs:
           endpoints:
             - http://elasticsearch:9200
           user: elastic
-          password: ${ES_LOCAL_PASSWORD}
+          password: \${ES_LOCAL_PASSWORD}
           tls:
             insecure_skip_verify: true
           mapping:
@@ -799,7 +803,7 @@ configs:
             exporters: [debug, elasticapm, elasticsearch/otel]
           traces:
             receivers: [otlp]
-            processors: [batch, elasticapm]
+            processors: [batch, ${trace_processor_name}]
             exporters: [debug, elasticapm, elasticsearch/otel]
           metrics/aggregated-otel-metrics:
             receivers:
