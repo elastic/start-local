@@ -793,7 +793,7 @@ configs:
             mode: otel
 
       service:
-	extensions: [ basicauth, apmconfig ]
+        extensions: [ basicauth, apmconfig ]
         pipelines:
           metrics:
             receivers: [otlp]
