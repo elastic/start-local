@@ -743,16 +743,10 @@ configs:
   edot-collector-config:
     content: |
       extensions:
-        basicauth:
-          client_auth:
-            username: elastic
-            password: ${ES_LOCAL_PASSWORD}
         apmconfig:
           source:
             elasticsearch:
-              endpoint: http://elasticsearch:9200
-              auth:
-                authenticator: basicauth
+              endpoint: http://elastic:${ES_LOCAL_PASSWORD}@elasticsearch:9200
               cache_duration: 10s
           opamp:
             protocols:
@@ -793,7 +787,7 @@ configs:
             mode: otel
 
       service:
-        extensions: [ basicauth, apmconfig ]
+        extensions: [ apmconfig ]
         pipelines:
           metrics:
             receivers: [otlp]
