@@ -52,6 +52,9 @@ function test_edot_collector_is_running() {
   }' \
   -o /dev/null -s -w "%{http_code}\n")
 
+    opamp_result=$(curl http://localhost:4320/v1/opamp -o /dev/null -sw "%{http_code}\n")
+
     assert_equals "200" "$result"
+    assert_equals "400" "$opamp_result" # Check that it's running
 }
 
