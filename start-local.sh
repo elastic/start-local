@@ -751,7 +751,7 @@ configs:
           opamp:
             protocols:
               http:
-                endpoint: "localhost:4320"
+                endpoint: 0.0.0.0:4320
       receivers:
         # Receives data from other Collectors in Agent mode
         otlp:
@@ -829,6 +829,7 @@ add_edot_service_in_docker_composer() {
     ports:
       - "4317:4317"  # grpc
       - "4318:4318"  # http
+      - "4320:4320"  # opamp
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/127.0.0.1/4317'"]
       retries: 300
@@ -1069,6 +1070,7 @@ success() {
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
+    echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
   fi
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
