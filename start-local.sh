@@ -742,6 +742,22 @@ configs:
   # for OTLP logs, metrics and traces, exporting to Elasticsearch.
   edot-collector-config:
     content: |
+      extensions:
+        basicauth:
+          client_auth:
+            username: elastic
+            password: ${ES_LOCAL_PASSWORD}
+        apmconfig:
+          source:
+            elasticsearch:
+              endpoint: http://elasticsearch:9200
+              auth:
+                authenticator: basicauth
+              cache_duration: 10s
+          opamp:
+            protocols:
+              http:
+                endpoint: "localhost:4320"
       receivers:
         # Receives data from other Collectors in Agent mode
         otlp:
@@ -777,6 +793,7 @@ configs:
             mode: otel
 
       service:
+	extensions: [ basicauth, apmconfig ]
         pipelines:
           metrics:
             receivers: [otlp]
