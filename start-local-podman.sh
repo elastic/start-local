@@ -22,7 +22,6 @@
 # under the License.
 
 set -eu
-. "$(dirname "$0")"/common.sh
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
@@ -87,6 +86,34 @@ version_sort() {
 # Function to check if the format is a valid semantic version (major.minor.patch)
 is_valid_version() {
   echo "$1" | grep -E -q '^[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+# Compare versions
+# parameter 1: version to compare
+# parameter 2: version to compare
+compare_versions() {
+  v1=$1
+  v2=$2
+
+  original_ifs="$IFS"
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v1; v1_major=${1:-0}; v1_minor=${2:-0}; v1_patch=${3:-0}
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v2; v2_major=${1:-0}; v2_minor=${2:-0}; v2_patch=${3:-0}
+  IFS="$original_ifs"
+
+  [ "$v1_major" -lt "$v2_major" ] && echo "lt" && return 0
+  [ "$v1_major" -gt "$v2_major" ] && echo "gt" && return 0
+
+  [ "$v1_minor" -lt "$v2_minor" ] && echo "lt" && return 0
+  [ "$v1_minor" -gt "$v2_minor" ] && echo "gt" && return 0
+
+  [ "$v1_patch" -lt "$v2_patch" ] && echo "lt" && return 0
+  [ "$v1_patch" -gt "$v2_patch" ] && echo "gt" && return 0
+
+  echo "eq"
 }
 
 # Get the latest stable version of Elasticsearch
