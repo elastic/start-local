@@ -816,6 +816,7 @@ create_edot_container() {
     --network-alias edot-collector \
     -p "4317:4317" \
     -p "4318:4318" \
+    -p "4320:4320" \
     -v "${edot_config_host_path}:/etc/otelcol-contrib/config.yaml:ro" \
     --env-file "$script_dir/.env" \
     "${image}" \
@@ -1502,6 +1503,7 @@ success() {
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
+    echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
   fi
 
   # Load ES_LOCAL_API_KEY environment variable.
