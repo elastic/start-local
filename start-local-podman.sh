@@ -514,15 +514,10 @@ create_edot_config() {
   fi
   cat > "$installation_folder/config/edot-collector/config.yaml" <<EOM
 extensions:
-  bearertokenauth:
-    scheme: APIKey
-    token: \${ES_LOCAL_API_KEY}
   apmconfig:
     source:
       elasticsearch:
-        endpoint: http://elasticsearch:9200
-        auth:
-          authenticator: bearertokenauth
+        endpoint: http://elastic:${es_password}@elasticsearch:9200
         cache_duration: 10s
     opamp:
       protocols:
@@ -562,7 +557,7 @@ exporters:
       mode: otel
 
 service:
-  extensions: [ bearertokenauth, apmconfig ]
+  extensions: [ apmconfig ]
   pipelines:
     metrics:
       receivers: [otlp]
