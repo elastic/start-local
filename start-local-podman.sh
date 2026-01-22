@@ -22,6 +22,7 @@
 # under the License.
 
 set -eu
+. "$(dirname "$0")"/common.sh
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
@@ -507,7 +508,26 @@ create_edot_config() {
     mkdir -p "$installation_folder/config/edot-collector"
   fi
 
-  cat > "$installation_folder/config/edot-collector/config.yaml" <<'EOM'
+  trace_processor_name="elasticapm"
+  if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
+    trace_processor_name="elastictrace"
+  fi
+  cat > "$installation_folder/config/edot-collector/config.yaml" <<EOM
+extensions:
+  bearertokenauth:
+    scheme: APIKey
+    token: \${ES_LOCAL_API_KEY}
+  apmconfig:
+    source:
+      elasticsearch:
+        endpoint: http://elasticsearch:9200
+        auth:
+          authenticator: bearertokenauth
+        cache_duration: 10s
+    opamp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4320
 receivers:
   # Receives data from other Collectors in Agent mode
   otlp:
@@ -528,20 +548,21 @@ processors:
   batch/metrics:
     send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
     timeout: 1s
-  elastictrace: {} # Elastic Trace Processor
+  ${trace_processor_name}: {}
 
 exporters:
   debug: {}
   elasticsearch/otel:
     endpoints:
       - http://elasticsearch:9200
-    api_key: ${ES_LOCAL_API_KEY}
+    api_key: \${ES_LOCAL_API_KEY}
     tls:
       insecure_skip_verify: true
     mapping:
       mode: otel
 
 service:
+  extensions: [ bearertokenauth, apmconfig ]
   pipelines:
     metrics:
       receivers: [otlp]
@@ -553,7 +574,7 @@ service:
       exporters: [debug, elasticapm, elasticsearch/otel]
     traces:
       receivers: [otlp]
-      processors: [batch, elastictrace]
+      processors: [batch, ${trace_processor_name}]
       exporters: [debug, elasticapm, elasticsearch/otel]
     metrics/aggregated-otel-metrics:
       receivers:
