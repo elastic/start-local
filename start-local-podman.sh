@@ -541,12 +541,14 @@ create_edot_config() {
   fi
   # shellcheck disable=SC2016
   es_local_api_key_var='${ES_LOCAL_API_KEY}'
+  # shellcheck disable=SC2016
+  es_local_password_var='${ES_LOCAL_PASSWORD}'
   cat > "$installation_folder/config/edot-collector/config.yaml" <<EOM
 extensions:
   apmconfig:
     source:
       elasticsearch:
-        endpoint: http://elastic:${es_password}@elasticsearch:9200
+        endpoint: http://elastic:${es_local_password_var}@elasticsearch:9200
         cache_duration: 10s
     opamp:
       protocols:
