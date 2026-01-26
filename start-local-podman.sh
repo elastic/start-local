@@ -88,6 +88,34 @@ is_valid_version() {
   echo "$1" | grep -E -q '^[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
+# Compare versions
+# parameter 1: version to compare
+# parameter 2: version to compare
+compare_versions() {
+  v1=$1
+  v2=$2
+
+  original_ifs="$IFS"
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v1; v1_major=${1:-0}; v1_minor=${2:-0}; v1_patch=${3:-0}
+  IFS='.'
+  # shellcheck disable=SC2086
+  set -- $v2; v2_major=${1:-0}; v2_minor=${2:-0}; v2_patch=${3:-0}
+  IFS="$original_ifs"
+
+  [ "$v1_major" -lt "$v2_major" ] && echo "lt" && return 0
+  [ "$v1_major" -gt "$v2_major" ] && echo "gt" && return 0
+
+  [ "$v1_minor" -lt "$v2_minor" ] && echo "lt" && return 0
+  [ "$v1_minor" -gt "$v2_minor" ] && echo "gt" && return 0
+
+  [ "$v1_patch" -lt "$v2_patch" ] && echo "lt" && return 0
+  [ "$v1_patch" -gt "$v2_patch" ] && echo "gt" && return 0
+
+  echo "eq"
+}
+
 # Get the latest stable version of Elasticsearch
 # Note: It removes all the beta or candidate releases from the list
 # but includes the GA releases (e.g. new major)
@@ -507,7 +535,25 @@ create_edot_config() {
     mkdir -p "$installation_folder/config/edot-collector"
   fi
 
-  cat > "$installation_folder/config/edot-collector/config.yaml" <<'EOM'
+  trace_processor_name="elasticapm"
+  if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
+    trace_processor_name="elastictrace"
+  fi
+  # shellcheck disable=SC2016
+  es_local_api_key_var='${ES_LOCAL_API_KEY}'
+  # shellcheck disable=SC2016
+  es_local_password_var='${ES_LOCAL_PASSWORD}'
+  cat > "$installation_folder/config/edot-collector/config.yaml" <<EOM
+extensions:
+  apmconfig:
+    source:
+      elasticsearch:
+        endpoint: http://elastic:${es_local_password_var}@elasticsearch:9200
+        cache_duration: 10s
+    opamp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4320
 receivers:
   # Receives data from other Collectors in Agent mode
   otlp:
@@ -528,20 +574,21 @@ processors:
   batch/metrics:
     send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
     timeout: 1s
-  elastictrace: {} # Elastic Trace Processor
+  ${trace_processor_name}: {}
 
 exporters:
   debug: {}
   elasticsearch/otel:
     endpoints:
       - http://elasticsearch:9200
-    api_key: ${ES_LOCAL_API_KEY}
+    api_key: ${es_local_api_key_var}
     tls:
       insecure_skip_verify: true
     mapping:
       mode: otel
 
 service:
+  extensions: [ apmconfig ]
   pipelines:
     metrics:
       receivers: [otlp]
@@ -553,7 +600,7 @@ service:
       exporters: [debug, elasticapm, elasticsearch/otel]
     traces:
       receivers: [otlp]
-      processors: [batch, elastictrace]
+      processors: [batch, ${trace_processor_name}]
       exporters: [debug, elasticapm, elasticsearch/otel]
     metrics/aggregated-otel-metrics:
       receivers:
@@ -795,6 +842,7 @@ create_edot_container() {
     --network-alias edot-collector \
     -p "4317:4317" \
     -p "4318:4318" \
+    -p "4320:4320" \
     -v "${edot_config_host_path}:/etc/otelcol-contrib/config.yaml:ro" \
     --env-file "$script_dir/.env" \
     "${image}" \
@@ -1481,6 +1529,7 @@ success() {
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
+    echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
   fi
 
   # Load ES_LOCAL_API_KEY environment variable.

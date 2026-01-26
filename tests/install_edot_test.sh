@@ -55,3 +55,11 @@ function test_edot_collector_is_running() {
     assert_equals "200" "$result"
 }
 
+function test_edot_opamp_is_running() {
+    result=$(curl http://localhost:4320/v1/opamp \
+    -H 'content-type:application/x-protobuf' \
+    -d '' \
+    -o /dev/null -sw "%{http_code}\n")
+
+    assert_equals "200" "$result"
+}

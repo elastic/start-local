@@ -735,13 +735,29 @@ EOM
 }
 
 add_edot_config_in_docker_compose() {
+  trace_processor_name="elasticapm"
+  if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
+    trace_processor_name="elastictrace"
+  fi
+  # shellcheck disable=SC2016
+  es_local_password_var='${ES_LOCAL_PASSWORD}'
   # Add the OTLP configs in docker-compose.yml
-  cat >> docker-compose.yml <<-'EOM'
+  cat >> docker-compose.yml <<-EOM
 configs:
   # This is the minimal yaml configuration needed to listen on all interfaces
   # for OTLP logs, metrics and traces, exporting to Elasticsearch.
   edot-collector-config:
     content: |
+      extensions:
+        apmconfig:
+          source:
+            elasticsearch:
+              endpoint: http://elastic:${es_local_password_var}@elasticsearch:9200
+              cache_duration: 10s
+          opamp:
+            protocols:
+              http:
+                endpoint: 0.0.0.0:4320
       receivers:
         # Receives data from other Collectors in Agent mode
         otlp:
@@ -762,7 +778,7 @@ configs:
         batch/metrics:
           send_batch_max_size: 0 # Explicitly set to 0 to avoid splitting metrics requests
           timeout: 1s
-        elastictrace: {} # Elastic Trace Processor
+        ${trace_processor_name}: {}
 
       exporters:
         debug: {}
@@ -770,13 +786,14 @@ configs:
           endpoints:
             - http://elasticsearch:9200
           user: elastic
-          password: ${ES_LOCAL_PASSWORD}
+          password: ${es_local_password_var}
           tls:
             insecure_skip_verify: true
           mapping:
             mode: otel
 
       service:
+        extensions: [ apmconfig ]
         pipelines:
           metrics:
             receivers: [otlp]
@@ -788,7 +805,7 @@ configs:
             exporters: [debug, elasticapm, elasticsearch/otel]
           traces:
             receivers: [otlp]
-            processors: [batch, elastictrace]
+            processors: [batch, ${trace_processor_name}]
             exporters: [debug, elasticapm, elasticsearch/otel]
           metrics/aggregated-otel-metrics:
             receivers:
@@ -818,6 +835,7 @@ add_edot_service_in_docker_composer() {
     ports:
       - "4317:4317"  # grpc
       - "4318:4318"  # http
+      - "4320:4320"  # opamp
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/127.0.0.1/4317'"]
       retries: 300
@@ -1058,6 +1076,7 @@ success() {
   echo "🔌 Elasticsearch API endpoint: http://localhost:9200"
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
+    echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
   fi
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
