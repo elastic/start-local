@@ -539,6 +539,8 @@ create_edot_config() {
   if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
     trace_processor_name="elastictrace"
   fi
+  # shellcheck disable=SC2016
+  es_local_apikey_var='${ES_LOCAL_API_KEY}'
   cat > "$installation_folder/config/edot-collector/config.yaml" <<EOM
 extensions:
   apmconfig:
@@ -577,7 +579,7 @@ exporters:
   elasticsearch/otel:
     endpoints:
       - http://elasticsearch:9200
-    api_key: \${ES_LOCAL_API_KEY}
+    api_key: ${es_local_apikey_var}
     tls:
       insecure_skip_verify: true
     mapping:

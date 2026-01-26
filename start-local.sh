@@ -739,6 +739,8 @@ add_edot_config_in_docker_compose() {
   if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
     trace_processor_name="elastictrace"
   fi
+  # shellcheck disable=SC2016
+  es_local_password_var='${ES_LOCAL_PASSWORD}'
   # Add the OTLP configs in docker-compose.yml
   cat >> docker-compose.yml <<-EOM
 configs:
@@ -750,7 +752,7 @@ configs:
         apmconfig:
           source:
             elasticsearch:
-              endpoint: http://elastic:\${ES_LOCAL_PASSWORD}@elasticsearch:9200
+              endpoint: http://elastic:${es_local_password_var}@elasticsearch:9200
               cache_duration: 10s
           opamp:
             protocols:
@@ -784,7 +786,7 @@ configs:
           endpoints:
             - http://elasticsearch:9200
           user: elastic
-          password: \${ES_LOCAL_PASSWORD}
+          password: ${es_local_password_var}
           tls:
             insecure_skip_verify: true
           mapping:
