@@ -410,7 +410,7 @@ check_requirements() {
     docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
     if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
       echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
-      echo "You can migrate you docker compose from https://docs.docker.com/compose/migrate/"
+      echo "You can update it from https://docs.docker.com/compose/install/"
       cleanup
       exit 1
     fi 
