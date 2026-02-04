@@ -388,6 +388,13 @@ initialize_container_runtime() {
   available "podman" && has_podman=true || has_podman=false
 
   if [ "$prefer_docker" = "false" ] && [ "$has_podman" = "false" ]; then
+    if [ "$has_docker" = "true" ]; then
+      echo "Podman is not installed, but Docker was detected."
+      echo "You can use the Docker-specific script instead:"
+      echo
+      echo "  curl -fsSL https://elastic.co/start-local | sh"
+      exit 1
+    fi
     echo "Error: Podman is not installed."
     echo "You can install Podman from https://podman.io/getting-started/installation/."
     exit 1
