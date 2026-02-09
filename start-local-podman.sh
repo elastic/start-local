@@ -120,7 +120,7 @@ compare_versions() {
 # Note: It removes all the beta or candidate releases from the list
 # but includes the GA releases (e.g. new major)
 get_latest_version() {
-  versions="$(curl -s "https://artifacts.elastic.co/releases/stack.json")"
+  versions="$(curl -s "https://elastic-release-api.s3.us-west-2.amazonaws.com/public/past-releases.json")"
   latest_version=$(echo "$versions" | awk -F'"' '/"version": *"/ {print $4}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+( GA)?$' | version_sort | tail -n 1)
   # Remove the GA prefix from the version, if present
   latest_version=$(echo "$latest_version" | awk '{ gsub(/ GA$/, "", $0); print }')
