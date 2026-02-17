@@ -395,6 +395,13 @@ check_requirements() {
   if ! docker compose >/dev/null 2>&1; then
     if ! available "docker-compose"; then
       if ! available "docker"; then
+        if available "podman"; then
+          echo "Docker is not installed, but Podman was detected."
+          echo "You can use the Podman-specific script instead:"
+          echo
+          echo "  curl -fsSL https://elastic.co/start-local-podman | sh"
+          exit 1
+        fi
         echo "Error: docker command is required"
         echo "You can install it from https://docs.docker.com/engine/install/."
         exit 1
