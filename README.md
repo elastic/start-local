@@ -1,6 +1,6 @@
 # 🚀 Try Elasticsearch and Kibana locally
 
-Run Elasticsearch and Kibana on your local machine using a simple shell script. This setup uses [Docker](https://www.docker.com/) behind the scenes to install and run the services.
+Run Elasticsearch and Kibana on your local machine using a simple shell script. This setup uses [Docker](https://www.docker.com/) or [Podman](https://podman.io/) behind the scenes to install and run the services.
 
 > [!IMPORTANT]  
 > This script is for local testing only. Do not use it in production!
@@ -19,7 +19,7 @@ For a complete list of subscriptions and features, see our [subscriptions page](
 ## 💻 System requirements
 
 - 5 GB of available disk space
-- [Docker](https://www.docker.com/)
+- [Docker](https://www.docker.com/) or [Podman](https://podman.io/)
 - Works on Linux and macOS
 - On Microsoft Windows it works using [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install)
 
@@ -27,15 +27,22 @@ For a complete list of subscriptions and features, see our [subscriptions page](
 
 ### Setup
 
-Run the `start-local` script using [curl](https://curl.se/):
+If you have **Docker**, you can use the following command:
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh
 ```
 
+For **Podman**, you can use the following command:
+
+```bash
+curl -fsSL https://elastic.co/start-local-podman | sh
+
+```
+
 This script creates an `elastic-start-local` folder containing:
 
-- `docker-compose.yml`: Docker Compose configuration for Elasticsearch and Kibana
+- `docker-compose.yml`: Docker/Podman Compose configuration for Elasticsearch and Kibana
 - `.env`: Environment settings, including the Elasticsearch password
 - `start.sh` and `stop.sh`: Scripts to start and stop Elasticsearch and Kibana
 - `uninstall.sh`: The script to uninstall Elasticsearch and Kibana
@@ -43,7 +50,7 @@ This script creates an `elastic-start-local` folder containing:
 ### Select the version to install
 
 By default, `start-local` uses the latest stable version of Elastic Stack. If you want, you can specify
-a different version using the `-v` parameter, as follows:
+a different version using the `-v` parameter, as follows (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh -s -- -v 8.16.0
@@ -53,7 +60,7 @@ The previous command installs Elasticsearch and Kibana `8.16.0`.
 
 Using the `-v` parameter, you can also install beta releases, this can be useful for testing an
 upcoming release. For instance, you can install the `9.0.0-beta1` using the following
-command:
+command (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh -s -- -v 9.0.0-beta1
@@ -64,7 +71,7 @@ The `9.0.0-beta1` version was released on February 18, 2025.
 ### Install only Elasticsearch
 
 If you want to install only Elasticsearch, without Kibana, you can use the `--esonly` option
-as follows:
+as follows (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh -s -- --esonly
@@ -75,7 +82,7 @@ This command can be useful if you don't have enough resources and want to test o
 ### Install the Elastic Distribution of OpenTelemetry (EDOT) Collector
 
 You can install the [EDOT Collector](https://www.elastic.co/docs/reference/opentelemetry/edot-collector)
-using the `--edot` option, as follows:
+using the `--edot` option, as follows (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | sh -s -- --edot
@@ -113,21 +120,19 @@ curl $ES_LOCAL_URL -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}"
 
 You can use the `start` and `stop` commands available in the `elastic-start-local` folder.
 
-To **stop** the Elasticsearch and Kibana Docker services, use the `stop` command:
+To **stop** the Elasticsearch and Kibana Docker/Podman services, use the `stop` command:
 
 ```bash
 cd elastic-start-local
 ./stop.sh
 ```
 
-To **start** the Elasticsearch and Kibana Docker services, use the `start` command:
+To **start** the Elasticsearch and Kibana Docker/Podman services, use the `start` command:
 
 ```bash
 cd elastic-start-local
 ./start.sh
 ```
-
-[Docker Compose](https://docs.docker.com/reference/cli/docker/compose/).
 
 ## 🗑️ Uninstallation
 
@@ -143,7 +148,7 @@ cd elastic-start-local
 
 ## 📝 Logging
 
-If the installation fails, an error log is created in `error-start-local.log`. This file contains logs from Elasticsearch and Kibana, captured using the [docker logs](https://docs.docker.com/reference/cli/docker/container/logs/) command.
+If the installation fails, an error log is created in `error-start-local.log`. This file contains logs from Elasticsearch and Kibana, captured using the [docker logs](https://docs.docker.com/reference/cli/docker/container/logs/) or [podman logs](https://docs.podman.io/en/latest/markdown/podman-logs.1.html) command.
 
 ## ⚙️ Customizing settings
 
@@ -181,7 +186,7 @@ Please use caution when using these settings.
 
 If you need to set the Elasticsearch password manually, you can do it using the `ES_LOCAL_PASSWORD`.
 
-You need to set the env variable before the execution of the script, as follows:
+You need to set the env variable before the execution of the script, as follows (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | ES_LOCAL_PASSWORD="supersecret" sh
@@ -195,7 +200,7 @@ for Elasticsearch authentication.
 ### ES_LOCAL_DIR
 
 By default, start-local creates an `elastic-start-local` folder. If you need to change it, you can use
-the `ES_LOCAL_DIR` env variable, as follows:
+the `ES_LOCAL_DIR` env variable, as follows (for Podman, replace `start-local` with `start-local-podman`):
 
 ```bash
 curl -fsSL https://elastic.co/start-local | ES_LOCAL_DIR="another-folder" sh
