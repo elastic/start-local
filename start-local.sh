@@ -67,11 +67,6 @@ parse_args() {
         ;;
     esac
   done
-  # Verify parameter consistency
-  if [ "$esonly" = "true" ] && [ "$edot" = "true" ]; then
-    echo "Error: the --edot parameter requires also Kibana, you cannot use --esonly"
-    exit 1
-  fi
 }
 
 startup() {
@@ -90,7 +85,7 @@ startup() {
   echo
 
   # Version
-  version="0.13.0"
+  version="0.14.0"
 
   # Folder name for the installation
   installation_folder="${ES_LOCAL_DIR:-elastic-start-local}"
