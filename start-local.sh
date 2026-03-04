@@ -386,8 +386,11 @@ check_requirements() {
   fi
   need_wait_for_kibana=true
   # Check for "docker compose" or "docker-compose"
+  # Note: we use "docker compose version" (not bare "docker compose") because
+  # the latter exits non-zero on some Docker Desktop / WSL2 setups when no
+  # subcommand is provided, causing a false fallback to legacy docker-compose.
   set +e
-  if ! docker compose >/dev/null 2>&1; then
+  if ! docker compose version >/dev/null 2>&1; then
     if ! available "docker-compose"; then
       if ! available "docker"; then
         if available "podman"; then
@@ -409,7 +412,8 @@ check_requirements() {
     docker_stop="docker-compose stop"
     docker_clean="docker-compose rm -fsv"
     docker_remove_volumes="docker-compose down -v"
-    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+    # Use tr -d '\r' to strip Windows-style CRLF line endings (e.g. on WSL2)
+    docker_version=$(docker-compose --version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | tr -d '\r')
     if [ "$(compare_versions "$docker_version" "$min_docker_compose")" = "lt" ]; then
       echo "Unfortunately we don't support docker compose ${docker_version}. The minimum required version is $min_docker_compose."
       echo "You can update it from https://docs.docker.com/compose/install/"
@@ -420,7 +424,8 @@ check_requirements() {
     docker_stop="docker compose stop"
     docker_clean="docker compose rm -fsv"
     docker_remove_volumes="docker compose down -v"
-    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+    # Use tr -d '\r' to strip Windows-style CRLF line endings (e.g. on WSL2)
+    docker_version=$(docker compose version | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | tr -d '\r')
     # --wait option has been introduced in 2.1.1+
     if [ "$(compare_versions "$docker_version" "2.1.0")" = "gt" ]; then
       docker="docker compose up --wait"
