@@ -182,7 +182,7 @@ get_os_info() {
       # Most modern Linux distributions have this file
       . /etc/os-release
       echo "Distribution: $NAME"
-      echo "Version: $VERSION"
+      echo "Version: ${VERSION:-}"
   elif [ -f /etc/lsb-release ]; then
       # For older distributions using LSB (Linux Standard Base)
       . /etc/lsb-release
@@ -897,7 +897,7 @@ EOM
       test:
         [
           "CMD-SHELL",
-          "curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
+          "curl --noproxy '*' --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
         ]
       interval: 10s
       timeout: 10s
@@ -919,7 +919,7 @@ if  [ "$esonly" = "false" ]; then
         echo "Setup the kibana_system password";
         start_time=$$(date +%s);
         timeout=60;
-        until curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
+        until curl --noproxy '*' -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
           if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
             echo "Error: Elasticsearch timeout";
             exit 1;
@@ -968,7 +968,7 @@ fi
       test:
         [
           "CMD-SHELL",
-          "curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
+          "curl --noproxy '*' -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
         ]
       interval: 10s
       timeout: 10s
