@@ -225,6 +225,39 @@ get_os_info() {
 # Check if a command exists
 available() { command -v "$1" >/dev/null; }
 
+is_wsl() {
+  if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    return 0
+  fi
+  if [ -f /proc/version ] && grep -qi "microsoft" /proc/version 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+check_docker_wsl() {
+  if ! is_wsl; then
+    return 0
+  fi
+  if ! docker_check=$(docker version 2>&1) 2>/dev/null; then
+    if echo "$docker_check" | grep -qiE "could not be found in this WSL|broken pipe|No such file or directory|Cannot connect to the Docker daemon|error during connect|SIGBUS|bus error"; then
+      echo "Error: Docker is not available in this WSL environment."
+      echo
+      echo "This usually means Docker Desktop is not running on your Windows host,"
+      echo "or WSL integration is not enabled for this distribution."
+      echo
+      echo "Please make sure that:"
+      echo "  1. Docker Desktop is installed and running on your Windows host"
+      echo "  2. The WSL 2 integration is enabled in Docker Desktop"
+      echo "     (Settings > Resources > WSL Integration)"
+      echo
+      echo "For more details, visit:"
+      echo "  https://docs.docker.com/desktop/features/wsl/#enabling-docker-support-in-wsl-2-distributions"
+      exit 1
+    fi
+  fi
+}
+
 # Revert the status, removing containers, volumes, network and folder
 cleanup() {
   if [ -d "./../$folder_to_clean" ]; then
@@ -384,6 +417,7 @@ check_requirements() {
     echo "You can install it from https://www.gnu.org/software/grep/."
     exit 1
   fi
+  check_docker_wsl
   need_wait_for_kibana=true
   # Check for "docker compose" or "docker-compose"
   set +e
