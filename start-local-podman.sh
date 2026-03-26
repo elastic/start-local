@@ -1534,7 +1534,7 @@ success() {
   fi
 
   # Load ES_LOCAL_API_KEY environment variable.
-  . "$installation_folder/.env"
+  . ./.env
 
   if [ -n "$ES_LOCAL_API_KEY" ]; then
     echo "🔑 API key: $ES_LOCAL_API_KEY"
