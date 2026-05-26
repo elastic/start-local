@@ -44,6 +44,7 @@ function test_stop() {
 }
 
 function test_start() {
+    close_extra_fds
     "${TEST_DIR}/${DEFAULT_DIR}/start.sh"
 
     assert_exit_code "0" "$(check_container_service_running es-local-dev)"

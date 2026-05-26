@@ -729,7 +729,7 @@ EOM
 
   if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-  echo "- docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}"
+  echo "- docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version}"
 EOM
   fi
 
@@ -754,10 +754,10 @@ EOM
 
   if  [ "$edot" = "true" ]; then
     cat >> uninstall.sh <<- EOM
-    if docker rmi docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} >/dev/null 2>&1; then
-      echo "Image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version} removed successfully"
+    if docker rmi docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version} removed successfully"
     else
-      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-edot-collector:${es_version}. It might be in use."
+      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version}. It might be in use."
     fi
 EOM
   fi

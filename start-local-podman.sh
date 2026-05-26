@@ -1441,7 +1441,7 @@ main() {
   fi
 
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
-    echo "- docker.elastic.co/elastic-agent/elastic-edot-collector:${ES_LOCAL_VERSION}"
+    echo "- docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}"
   fi
 
   if ! ask_confirmation; then

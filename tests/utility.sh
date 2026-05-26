@@ -63,6 +63,16 @@ function login_kibana() {
     echo "$result"
 }
 
+# Close extra file descriptors (3-9) before calling start.sh in tests.
+# bashunit runs each test function inside a $() capture subshell and saves the
+# pipe write-end to fd 5 via `exec 5>&1`. Podman's conmon monitor inherits all
+# open fds at fork time, so without closing them it holds fd 5 open for the
+# container's lifetime. This prevents the $() from ever reaching EOF and causing
+# a silent hang until the CI job is cancelled.
+function close_extra_fds() {
+  for _fd in 3 4 5 6 7 8 9; do eval "exec ${_fd}>&-" 2>/dev/null || true; done
+}
+
 # Tee the output in a file
 function cap () { tee "${1}/capture.out"; }
 
@@ -73,7 +83,7 @@ function ret () { cat "${1}/capture.out"; }
 function check_container_service_running() {
   local container_name=$1
   local containers
-  containers=$($TEST_CONTAINER_CLI ps --format '{{.Names}}')
+  containers=$("$TEST_CONTAINER_CLI" ps --format '{{.Names}}')
   if echo "$containers" | grep -q "^${container_name}$"; then
     return 0 # true
   else

@@ -23,35 +23,25 @@ ENV_PATH="${DEFAULT_DIR}/.env"
 # include external scripts
 source "${CURRENT_DIR}/tests/utility.sh"
 
-function set_up_before_script() {
+function set_up() {
     # shellcheck disable=SC2086
-    sh "${CURRENT_DIR}/${SCRIPT_FILE}"${SCRIPT_EXTRA_ARGS}
+    sh "${CURRENT_DIR}/${SCRIPT_FILE}"${SCRIPT_EXTRA_ARGS} "--edot"
     # shellcheck disable=SC1090
     source "${ENV_PATH}"
 }
 
-function tear_down_after_script() {
-    printf "yes\nno\n" | "${DEFAULT_DIR}/uninstall.sh"
+function tear_down() {
     rm -rf "${DEFAULT_DIR}"
 }
 
-function test_start_with_expired_license() {
-    # Check license is trial
-    license=$(get_elasticsearch_license)
-    assert_equals "$license" "trial"
-    
-    # Change the expire date in start.sh
-    sed -r -i 's/^(ES_LOCAL_LICENSE_EXPIRE_DATE=)[0-9]+$/\10/' "${ENV_PATH}"
-    close_extra_fds
-    "${DEFAULT_DIR}/start.sh"
-
-    # Check license is basic
-    license=$(get_elasticsearch_license)
-    assert_equals "$license" "basic"
-}
-
-function get_elasticsearch_license() {
-    local response
-    response=$(curl -X GET "$ES_LOCAL_URL/_license" -H "Authorization: ApiKey ${ES_LOCAL_API_KEY}")
-    echo "$response" | jq -r '.license.type'
+function test_uninstall_edot_remove_images() {
+    cd "${DEFAULT_DIR}" || exit
+    printf "yes\nyes\n" | ./uninstall.sh
+    assert_exit_code "1" "$(check_container_service_running es-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running kibana-local-dev)"
+    assert_exit_code "1" "$(check_container_service_running edot-collector)"
+    assert_is_directory_empty "${DEFAULT_DIR}"
+    assert_exit_code "1" "$(check_container_image_exists docker.elastic.co/elasticsearch/elasticsearch:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "1" "$(check_container_image_exists docker.elastic.co/kibana/kibana:"${ES_LOCAL_VERSION}")"
+    assert_exit_code "1" "$(check_container_image_exists docker.elastic.co/elastic-agent/elastic-otel-collector:"${ES_LOCAL_VERSION}")"
 }
