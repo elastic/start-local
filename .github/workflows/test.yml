@@ -28,7 +28,7 @@ jobs:
 
     - name: Install bashunit
       run: |
-        curl -s https://bashunit.typeddevs.com/install.sh | bash
+        curl -sL https://bashunit.typeddevs.com/install.sh | bash
 
     - name: Run the common tests
       env:
@@ -61,7 +61,7 @@ jobs:
 
     - name: Install bashunit
       run: |
-        curl -s https://bashunit.typeddevs.com/install.sh | bash
+        curl -sL https://bashunit.typeddevs.com/install.sh | bash
    
     - name: Set up Podman
       run: |
