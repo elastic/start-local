@@ -824,9 +824,18 @@ create_kibana_container() {
 
   # Fleet preconfiguration. Values must not contain spaces: kibana-docker splits
   # long options on whitespace when translating environment variables.
+  # xpack.fleet.outputs is not in that allowlist, so it is passed as a Kibana
+  # argument. The image entrypoint is tini and its command is kibana-docker.
   fleet_env=""
+  kibana_args=""
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
-    fleet_env="-e XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=[\"https://localhost:${FLEET_LOCAL_PORT}\"] -e XPACK_FLEET_AGENTS_ELASTICSEARCH_HOSTS=[\"http://elasticsearch:9200\"] -e XPACK_FLEET_PACKAGES=[{\"name\":\"fleet_server\",\"version\":\"latest\"},{\"name\":\"system\",\"version\":\"latest\"},{\"name\":\"elastic_agent\",\"version\":\"latest\"}] -e XPACK_FLEET_AGENTPOLICIES=[{\"name\":\"Fleet-Server-Policy\",\"id\":\"fleet-server-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"package_policies\":[{\"name\":\"fleet_server-1\",\"id\":\"fleet_server-1\",\"package\":{\"name\":\"fleet_server\"}},{\"name\":\"system-1\",\"id\":\"system-1\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-1\",\"id\":\"elastic_agent-1\",\"package\":{\"name\":\"elastic_agent\"}}]},{\"name\":\"Agent-Policy\",\"id\":\"agent-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"is_default\":true,\"package_policies\":[{\"name\":\"system-2\",\"id\":\"system-2\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-2\",\"id\":\"elastic_agent-2\",\"package\":{\"name\":\"elastic_agent\"}}]}]"
+    fleet_env="-e XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=[\"https://localhost:${FLEET_LOCAL_PORT}\"] -e XPACK_FLEET_PACKAGES=[{\"name\":\"fleet_server\",\"version\":\"latest\"},{\"name\":\"system\",\"version\":\"latest\"},{\"name\":\"elastic_agent\",\"version\":\"latest\"}] -e XPACK_FLEET_AGENTPOLICIES=[{\"name\":\"Fleet-Server-Policy\",\"id\":\"fleet-server-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"data_output_id\":\"fleet-server-output\",\"monitoring_output_id\":\"fleet-server-output\",\"package_policies\":[{\"name\":\"fleet_server-1\",\"id\":\"fleet_server-1\",\"package\":{\"name\":\"fleet_server\"}},{\"name\":\"system-1\",\"id\":\"system-1\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-1\",\"id\":\"elastic_agent-1\",\"package\":{\"name\":\"elastic_agent\"}}]},{\"name\":\"Agent-Policy\",\"id\":\"agent-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"is_default\":true,\"data_output_id\":\"agent-output\",\"monitoring_output_id\":\"agent-output\",\"package_policies\":[{\"name\":\"system-2\",\"id\":\"system-2\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-2\",\"id\":\"elastic_agent-2\",\"package\":{\"name\":\"elastic_agent\"}}]}]"
+    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":false,\"is_default_monitoring\":false},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":true,\"is_default_monitoring\":true}]"
+  fi
+  if [ -n "${kibana_args}" ]; then
+    set -- /usr/local/bin/kibana-docker "${kibana_args}"
+  else
+    set --
   fi
 
   # shellcheck disable=SC2086
@@ -846,7 +855,8 @@ create_kibana_container() {
     -e "ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}" \
     -e "XPACK_SPACES_DEFAULTSOLUTION=es" \
     $fleet_env \
-    "${image}" 2>&1); then
+    "${image}" \
+    "$@" 2>&1); then
     echo "failed."
     printf '%s\n' "$output"
     return 1
@@ -914,6 +924,8 @@ create_fleet_container() {
     return 0
   fi
 
+  # FLEET_URL uses port 8220 because enrollment runs inside this container.
+  # FLEET_LOCAL_PORT is only the published host port.
   if ! output=$("$CONTAINER_CLI" create \
     --name "${FLEET_LOCAL_CONTAINER_NAME}" \
     --network "${CONTAINER_NETWORK_NAME}" \
@@ -931,7 +943,7 @@ create_fleet_container() {
     -e "KIBANA_FLEET_USERNAME=elastic" \
     -e "KIBANA_FLEET_PASSWORD=${ES_LOCAL_PASSWORD}" \
     -e "FLEET_ENROLL=1" \
-    -e "FLEET_URL=https://localhost:${FLEET_LOCAL_PORT}" \
+    -e "FLEET_URL=https://localhost:8220" \
     -e "FLEET_INSECURE=true" \
     "${image}" 2>&1); then
     echo "failed."

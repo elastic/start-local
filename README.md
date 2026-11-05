@@ -105,6 +105,8 @@ curl -fsSL https://elastic.co/start-local | sh -s -- --fleet
 This command installs Elasticsearch, Kibana, and a Fleet Server.
 Fleet Server listens on <https://localhost:8220> with a self-signed TLS certificate.
 Elastic Agents that enroll in this Fleet Server must use the `--insecure` flag.
+Agents installed on the host send data to Elasticsearch at <http://localhost:9200>.
+The Fleet Server container uses <http://elasticsearch:9200> on the container network.
 
 `--fleet` cannot be combined with `--esonly`, because Fleet Server enrolls through Kibana.
 

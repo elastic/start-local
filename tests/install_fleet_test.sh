@@ -56,3 +56,28 @@ function test_fleet_server_agent_is_enrolled() {
 
     assert_contains "fleet-server-policy" "$response"
 }
+
+function test_fleet_server_enrolls_on_container_port() {
+    env_vars=$("$TEST_CONTAINER_CLI" inspect fleet-server --format '{{range .Config.Env}}{{println .}}{{end}}')
+    assert_contains "FLEET_URL=https://localhost:8220" "$env_vars"
+}
+
+function test_policies_use_separate_elasticsearch_outputs() {
+    outputs=$(curl -s \
+        -u "elastic:${ES_LOCAL_PASSWORD}" \
+        -H "kbn-xsrf: true" \
+        "http://localhost:5601/api/fleet/outputs")
+    fleet_policy=$(curl -s \
+        -u "elastic:${ES_LOCAL_PASSWORD}" \
+        -H "kbn-xsrf: true" \
+        "http://localhost:5601/api/fleet/agent_policies/fleet-server-policy")
+    agent_policy=$(curl -s \
+        -u "elastic:${ES_LOCAL_PASSWORD}" \
+        -H "kbn-xsrf: true" \
+        "http://localhost:5601/api/fleet/agent_policies/agent-policy")
+
+    assert_contains "http://elasticsearch:9200" "$outputs"
+    assert_contains "http://localhost:9200" "$outputs"
+    assert_contains "fleet-server-output" "$fleet_policy"
+    assert_contains "agent-output" "$agent_policy"
+}

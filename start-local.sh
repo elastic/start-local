@@ -376,6 +376,34 @@ wait_for_kibana() {
   done
 }
 
+# Wait until Fleet Server reports HEALTHY.
+# Used when Compose is too old for `up --wait`, which would otherwise
+# return before the Fleet healthcheck finishes.
+# parameter: timeout in seconds
+wait_for_fleet() {
+  timeout="${1:-300}"
+  echo "- Waiting for Fleet Server to be ready"
+  echo
+  start_time="$(date +%s)"
+  # The published host port is 8220 during installation. Inside the container
+  # Fleet Server always listens on 8220; this check runs on the host.
+  until curl --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '"HEALTHY"'; do
+    elapsed_time="$(($(date +%s) - start_time))"
+    if [ "$elapsed_time" -ge "$timeout" ]; then
+      error_msg="Error: Fleet Server timeout of ${timeout} sec"
+      echo "$error_msg"
+      services="${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${fleet_container_name}"
+      if [ "$edot" = "true" ]; then
+        services="${services} ${edot_container_name}"
+      fi
+      generate_error_log "${error_msg}" "${services}"
+      cleanup
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
 # Generates a random password with letters and numbers
 # parameter: size of the password (default is 8 characters)
 random_password() {
@@ -644,6 +672,25 @@ wait_for_kibana() {
 }
 
 EOM
+    if [ "$fleet" = "true" ]; then
+      cat >> start.sh <<-'EOM'
+wait_for_fleet() {
+  _timeout="${1:-300}"
+  echo "- Waiting for Fleet Server to be ready"
+  echo
+  _start_time="$(date +%s)"
+  until curl --noproxy '*' -k -s --fail "https://127.0.0.1:${FLEET_LOCAL_PORT}/api/status" | grep -q '"HEALTHY"'; do
+    elapsed_time="$(($(date +%s) - _start_time))"
+    if [ "$elapsed_time" -ge "$_timeout" ]; then
+      echo "Error: Fleet Server timeout of ${_timeout} sec"
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
+EOM
+    fi
   fi
 
   cat >> start.sh <<- EOM
@@ -679,6 +726,11 @@ EOM
     cat >> start.sh <<-'EOM'
 wait_for_kibana 120
 EOM
+    if [ "$fleet" = "true" ]; then
+      cat >> start.sh <<-'EOM'
+wait_for_fleet 300
+EOM
+    fi
   fi
   chmod +x start.sh
 }
@@ -932,7 +984,9 @@ add_fleet_service_in_docker_compose() {
       - KIBANA_FLEET_USERNAME=elastic
       - KIBANA_FLEET_PASSWORD=${ES_LOCAL_PASSWORD}
       - FLEET_ENROLL=1
-      - FLEET_URL=https://localhost:${FLEET_LOCAL_PORT}
+      # Enrollment runs inside this container, where Fleet Server listens on 8220.
+      # FLEET_LOCAL_PORT is only the published host port.
+      - FLEET_URL=https://localhost:8220
       - FLEET_INSECURE=true
     healthcheck:
       test:
@@ -1093,9 +1147,15 @@ fi
 if [ "$fleet" = "true" ]; then
   cat >> docker-compose.yml <<-'EOM'
       - 'XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=["https://localhost:${FLEET_LOCAL_PORT}"]'
-      - 'XPACK_FLEET_AGENTS_ELASTICSEARCH_HOSTS=["http://elasticsearch:9200"]'
       - 'XPACK_FLEET_PACKAGES=[{"name":"fleet_server","version":"latest"},{"name":"system","version":"latest"},{"name":"elastic_agent","version":"latest"}]'
-      - 'XPACK_FLEET_AGENTPOLICIES=[{"name":"Fleet-Server-Policy","id":"fleet-server-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"package_policies":[{"name":"fleet_server-1","id":"fleet_server-1","package":{"name":"fleet_server"}},{"name":"system-1","id":"system-1","package":{"name":"system"}},{"name":"elastic_agent-1","id":"elastic_agent-1","package":{"name":"elastic_agent"}}]},{"name":"Agent-Policy","id":"agent-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"is_default":true,"package_policies":[{"name":"system-2","id":"system-2","package":{"name":"system"}},{"name":"elastic_agent-2","id":"elastic_agent-2","package":{"name":"elastic_agent"}}]}]'
+      - 'XPACK_FLEET_AGENTPOLICIES=[{"name":"Fleet-Server-Policy","id":"fleet-server-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"data_output_id":"fleet-server-output","monitoring_output_id":"fleet-server-output","package_policies":[{"name":"fleet_server-1","id":"fleet_server-1","package":{"name":"fleet_server"}},{"name":"system-1","id":"system-1","package":{"name":"system"}},{"name":"elastic_agent-1","id":"elastic_agent-1","package":{"name":"elastic_agent"}}]},{"name":"Agent-Policy","id":"agent-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"is_default":true,"data_output_id":"agent-output","monitoring_output_id":"agent-output","package_policies":[{"name":"system-2","id":"system-2","package":{"name":"system"}},{"name":"elastic_agent-2","id":"elastic_agent-2","package":{"name":"elastic_agent"}}]}]'
+    # xpack.fleet.outputs is not an allowed Kibana Docker environment variable.
+    # The image entrypoint is tini and its command is kibana-docker, so pass the
+    # setting as an extra argument. Host agents publish to localhost; Fleet Server
+    # stays on the container network.
+    command:
+      - /usr/local/bin/kibana-docker
+      - '--xpack.fleet.outputs=[{"id":"fleet-server-output","name":"Fleet-Server","type":"elasticsearch","hosts":["http://elasticsearch:9200"],"is_default":false,"is_default_monitoring":false},{"id":"agent-output","name":"Elasticsearch","type":"elasticsearch","hosts":["http://localhost:${ES_LOCAL_PORT}"],"is_default":true,"is_default_monitoring":true}]'
 EOM
 fi
 
@@ -1209,6 +1269,9 @@ api_key() {
 kibana_wait() {
   if [ "$need_wait_for_kibana" = true ]; then
     wait_for_kibana 120
+    if [ "$fleet" = "true" ]; then
+      wait_for_fleet 300
+    fi
   fi
 }
 
