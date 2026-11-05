@@ -26,6 +26,7 @@ parse_args() {
   #parameters
   esonly=false
   edot=false
+  fleet=false
   # Parse the script parameters
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -49,6 +50,11 @@ parse_args() {
         shift
         ;;
 
+      --fleet)
+        fleet=true
+        shift
+        ;;
+
       --)
         # End of options; shift and exit the loop
         shift
@@ -67,6 +73,12 @@ parse_args() {
         ;;
     esac
   done
+
+  # Fleet Server enrolls through Kibana, so it cannot run without Kibana
+  if [ "$fleet" = "true" ] && [ "$esonly" = "true" ]; then
+    echo "Error: --fleet cannot be used with --esonly"
+    exit 1
+  fi
 }
 
 startup() {
@@ -103,6 +115,8 @@ startup() {
   kibana_settings_container_name="kibana-local-settings${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # EDOT container name
   edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Fleet Server container name
+  fleet_container_name="fleet-server${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 }
@@ -294,6 +308,9 @@ generate_error_log() {
     if [ "$edot" = "true" ]; then
       echo "--edot parameter used"
     fi
+    if [ "$fleet" = "true" ]; then
+      echo "--fleet parameter used"
+    fi
     get_os_info
   } >> "$error_file" 
   for service in $docker_services; do
@@ -344,11 +361,14 @@ wait_for_kibana() {
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
       echo "$error_msg"
+      services="${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
       if [ "$edot" = "true" ]; then
-        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
-      else
-        generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
+        services="${services} ${edot_container_name}"
       fi
+      if [ "$fleet" = "true" ]; then
+        services="${services} ${fleet_container_name}"
+      fi
+      generate_error_log "${error_msg}" "${services}"
       cleanup
       exit 1
     fi
@@ -497,6 +517,7 @@ check_docker_services() {
   check_container_running "$kibana_container_name"
   check_container_running "$kibana_settings_container_name"
   check_container_running "$edot_container_name"
+  check_container_running "$fleet_container_name"
 }
 
 create_installation_folder() {
@@ -544,14 +565,27 @@ ES_LOCAL_DISK_SPACE_REQUIRED=1gb
 ES_LOCAL_LICENSE_EXPIRE_DATE=$license_expire
 EOM
 
-  if [ "$edot" = "true" ]; then
+  if [ "$edot" = "true" ] || [ "$fleet" = "true" ]; then
     cat >> .env <<- EOM
 ES_LOCAL_JAVA_OPTS="-Xms2g -Xmx2g"
-EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
 EOM
   else
     cat >> .env <<- EOM
 ES_LOCAL_JAVA_OPTS="-Xms128m -Xmx2g"
+EOM
+  fi
+
+  if [ "$edot" = "true" ]; then
+    cat >> .env <<- EOM
+EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
+EOM
+  fi
+
+  if [ "$fleet" = "true" ]; then
+    cat >> .env <<- EOM
+FLEET_LOCAL_CONTAINER_NAME=$fleet_container_name
+FLEET_LOCAL_PORT=8220
+FLEET_LOCAL_URL=https://localhost:\${FLEET_LOCAL_PORT}
 EOM
   fi
 
@@ -733,6 +767,12 @@ EOM
 EOM
   fi
 
+  if  [ "$fleet" = "true" ]; then
+    cat >> uninstall.sh <<- EOM
+  echo "- docker.elastic.co/elastic-agent/elastic-agent:${es_version}"
+EOM
+  fi
+
   cat >> uninstall.sh <<- EOM
   if ask_confirmation; then
     if docker rmi "docker.elastic.co/elasticsearch/elasticsearch:${es_version}" >/dev/null 2>&1; then
@@ -758,6 +798,16 @@ EOM
       echo "Image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version} removed successfully"
     else
       echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-otel-collector:${es_version}. It might be in use."
+    fi
+EOM
+  fi
+
+  if  [ "$fleet" = "true" ]; then
+    cat >> uninstall.sh <<- EOM
+    if docker rmi docker.elastic.co/elastic-agent/elastic-agent:${es_version} >/dev/null 2>&1; then
+      echo "Image docker.elastic.co/elastic-agent/elastic-agent:${es_version} removed successfully"
+    else
+      echo "Failed to remove image docker.elastic.co/elastic-agent/elastic-agent:${es_version}. It might be in use."
     fi
 EOM
   fi
@@ -850,6 +900,49 @@ configs:
             exporters:
               - debug
               - elasticsearch/otel
+
+EOM
+}
+
+add_fleet_service_in_docker_compose() {
+  cat >> docker-compose.yml <<-'EOM'
+  fleet-server:
+    image: docker.elastic.co/elastic-agent/elastic-agent:${ES_LOCAL_VERSION}
+    container_name: ${FLEET_LOCAL_CONTAINER_NAME}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:${FLEET_LOCAL_PORT}:8220
+    volumes:
+      - dev-fleet-server:/usr/share/elastic-agent/state
+    extra_hosts:
+      - host.docker.internal:host-gateway
+      - model-runner.docker.internal:host-gateway
+    environment:
+      - FLEET_SERVER_ENABLE=1
+      - FLEET_SERVER_ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - FLEET_SERVER_POLICY_ID=fleet-server-policy
+      - FLEET_SERVER_HOST=0.0.0.0
+      - FLEET_SERVER_PORT=8220
+      - KIBANA_FLEET_SETUP=1
+      - KIBANA_HOST=http://kibana:5601
+      - KIBANA_FLEET_USERNAME=elastic
+      - KIBANA_FLEET_PASSWORD=${ES_LOCAL_PASSWORD}
+      - FLEET_ENROLL=1
+      - FLEET_URL=https://localhost:${FLEET_LOCAL_PORT}
+      - FLEET_INSECURE=true
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
 
 EOM
 }
@@ -997,6 +1090,15 @@ else
 EOM
 fi
 
+if [ "$fleet" = "true" ]; then
+  cat >> docker-compose.yml <<-'EOM'
+      - 'XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=["https://localhost:${FLEET_LOCAL_PORT}"]'
+      - 'XPACK_FLEET_AGENTS_ELASTICSEARCH_HOSTS=["http://elasticsearch:9200"]'
+      - 'XPACK_FLEET_PACKAGES=[{"name":"fleet_server","version":"latest"},{"name":"system","version":"latest"},{"name":"elastic_agent","version":"latest"}]'
+      - 'XPACK_FLEET_AGENTPOLICIES=[{"name":"Fleet-Server-Policy","id":"fleet-server-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"package_policies":[{"name":"fleet_server-1","id":"fleet_server-1","package":{"name":"fleet_server"}},{"name":"system-1","id":"system-1","package":{"name":"system"}},{"name":"elastic_agent-1","id":"elastic_agent-1","package":{"name":"elastic_agent"}}]},{"name":"Agent-Policy","id":"agent-policy","namespace":"default","monitoring_enabled":["logs","metrics"],"is_default":true,"package_policies":[{"name":"system-2","id":"system-2","package":{"name":"system"}},{"name":"elastic_agent-2","id":"elastic_agent-2","package":{"name":"elastic_agent"}}]}]'
+EOM
+fi
+
   cat >> docker-compose.yml <<-'EOM'
     healthcheck:
       test:
@@ -1015,6 +1117,10 @@ if [ "$edot" = "true" ]; then
   add_edot_service_in_docker_composer
 fi
 
+if [ "$fleet" = "true" ]; then
+  add_fleet_service_in_docker_compose
+fi
+
   cat >> docker-compose.yml <<-'EOM'
 volumes:
   dev-elasticsearch:
@@ -1023,6 +1129,12 @@ EOM
 if  [ "$esonly" = "false" ]; then
   cat >> docker-compose.yml <<-'EOM'
   dev-kibana:
+EOM
+fi
+
+if [ "$fleet" = "true" ]; then
+  cat >> docker-compose.yml <<-'EOM'
+  dev-fleet-server:
 EOM
 fi
 
@@ -1043,8 +1155,12 @@ EOM
 print_steps() {
   if  [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
+  elif [ "$edot" = "true" ] && [ "$fleet" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana, EDOT collector and Fleet Server v${es_version}..."
   elif [ "$edot" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
+  elif [ "$fleet" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana and Fleet Server v${es_version}..."
   else
     echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   fi
@@ -1065,12 +1181,17 @@ running_docker_compose() {
     error_msg="Error: ${docker} command failed!"
     echo "$error_msg"
     if [ "$esonly" = "true" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name}"
-    elif [ "$edot" = "true" ]; then
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name} ${edot_container_name}"
+      services="${elasticsearch_container_name}"
     else
-      generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
+      services="${elasticsearch_container_name} ${kibana_container_name} ${kibana_settings_container_name}"
+      if [ "$edot" = "true" ]; then
+        services="${services} ${edot_container_name}"
+      fi
+      if [ "$fleet" = "true" ]; then
+        services="${services} ${fleet_container_name}"
+      fi
     fi
+    generate_error_log "${error_msg}" "${services}"
     cleanup
     exit 1
   fi
@@ -1096,8 +1217,12 @@ success() {
   if  [ "$esonly" = "true" ]; then
     echo "🎉 Congrats, Elasticsearch is installed and running in Docker!"
   else
-    if [ "$edot" = "true" ]; then
+    if [ "$edot" = "true" ] && [ "$fleet" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana, EDOT collector and Fleet Server are installed and running in Docker!"
+    elif [ "$edot" = "true" ]; then
       echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running in Docker!"
+    elif [ "$fleet" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana and Fleet Server are installed and running in Docker!"
     else
       echo "🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!"
     fi
@@ -1113,6 +1238,9 @@ success() {
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
     echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
+  fi
+  if [ "$fleet" = "true" ]; then
+    echo "🛸 Fleet Server endpoint: https://localhost:8220 (self-signed TLS, use --insecure)"
   fi
   if [ -n "$api_key" ]; then
     echo "🔑 API key: $api_key"
