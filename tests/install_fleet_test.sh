@@ -62,6 +62,21 @@ function test_fleet_server_enrolls_on_container_port() {
     assert_contains "FLEET_URL=https://localhost:8220" "$env_vars"
 }
 
+# The live stack uses the default port, where 8220 and FLEET_LOCAL_PORT are
+# the same number. Read the generated config so a later edit cannot point the
+# in-container enrollment URL at the published host port without failing CI.
+function test_published_port_stays_separate_from_container_port() {
+    if [ -f "${DEFAULT_DIR}/docker-compose.yml" ]; then
+        config=$(cat "${DEFAULT_DIR}/docker-compose.yml")
+    else
+        config=$(cat "${DEFAULT_DIR}/up.sh")
+    fi
+
+    assert_contains 'FLEET_URL=https://localhost:8220' "$config"
+    assert_contains '127.0.0.1:${FLEET_LOCAL_PORT}:8220' "$config"
+    assert_contains 'https://localhost:${FLEET_LOCAL_PORT}' "$config"
+}
+
 function test_policies_use_separate_elasticsearch_outputs() {
     outputs=$(curl -s \
         -u "elastic:${ES_LOCAL_PASSWORD}" \

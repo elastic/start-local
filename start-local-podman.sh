@@ -148,6 +148,25 @@ cleanup() {
       ( cd "$installation_folder" && ./down.sh ) >/dev/null 2>&1 || true
     fi
 
+    # down.sh can still stop early if it cannot start. Remove anything it left
+    # so a partial failure does not keep containers after this folder is deleted.
+    if [ -n "${container_cli:-}" ]; then
+      if [ "${fleet:-false}" = "true" ]; then
+        "$container_cli" rm -f "$fleet_container_name" >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f dev-fleet-server >/dev/null 2>&1 || true
+      fi
+      if [ "${edot:-false}" = "true" ]; then
+        "$container_cli" rm -f "$edot_container_name" >/dev/null 2>&1 || true
+      fi
+      if [ "${esonly:-false}" != "true" ]; then
+        "$container_cli" rm -f "$kibana_container_name" >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f dev-kibana >/dev/null 2>&1 || true
+      fi
+      "$container_cli" rm -f "$elasticsearch_container_name" >/dev/null 2>&1 || true
+      "$container_cli" volume rm -f dev-elasticsearch >/dev/null 2>&1 || true
+      "$container_cli" network rm "$container_network_name" >/dev/null 2>&1 || true
+    fi
+
     rm -rf "$installation_folder"
   fi
 }
@@ -228,7 +247,9 @@ generate_error_log() {
 
   for service in $services; do
     echo "-- Logs of service ${service}:" >> "$error_file"
-    $container_cli logs "${service}" >> "$error_file" 2> /dev/null
+    # A missing container must not abort this function. The caller still has
+    # to run cleanup, and set -e would skip it when logs returns non-zero.
+    $container_cli logs "${service}" >> "$error_file" 2>/dev/null || true
   done
 
   echo "An error log has been generated in '${error_log}' file."
@@ -1493,20 +1514,22 @@ remove_fleet_container() {
 }
 
 main() {
+  # Keep going after a removal error so one stuck container does not leave
+  # the rest of the stack behind.
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_fleet_container
+    remove_fleet_container || true
   fi
 
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_edot_container
+    remove_edot_container || true
   fi
 
   if [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_kibana_container
+    remove_kibana_container || true
   fi
 
-  remove_elasticsearch_container
-  remove_bridged_network
+  remove_elasticsearch_container || true
+  remove_bridged_network || true
 }
 
 main
@@ -1679,9 +1702,8 @@ initialize_containers() {
       services="${services} ${fleet_container_name}"
     fi
   fi
-  generate_error_log "${error_msg}" "${services}"
-
-  cleanup
+  generate_error_log "${error_msg}" "${services}" || true
+  cleanup || true
   exit 1
 }
 
