@@ -139,12 +139,13 @@ get_latest_version() {
   echo "$latest_version"
 }
 
-# Revert the status, removing containers, volumes, network and folder
+# Revert the status, removing containers, volumes, network and folder.
+# down.sh does not prompt. uninstall.sh does, so a failed start would leave
+# containers running and the later tests would collide with them.
 cleanup() {
   if [ -d "$installation_folder" ]; then
-    if [ -f "uninstall.sh" ]; then
-      "$installation_folder/stop.sh" >/dev/null 2>&1 || true
-      "$installation_folder/uninstall.sh" >/dev/null 2>&1 || true
+    if [ -f "$installation_folder/down.sh" ]; then
+      ( cd "$installation_folder" && ./down.sh ) >/dev/null 2>&1 || true
     fi
 
     rm -rf "$installation_folder"
@@ -926,13 +927,16 @@ create_fleet_container() {
 
   # FLEET_URL uses port 8220 because enrollment runs inside this container.
   # FLEET_LOCAL_PORT is only the published host port.
+  # :U chowns the state volume to the container user (uid 1000). Rootless Podman
+  # otherwise leaves that named volume owned by root, and Fleet Server exits
+  # before it can listen.
   if ! output=$("$CONTAINER_CLI" create \
     --name "${FLEET_LOCAL_CONTAINER_NAME}" \
     --network "${CONTAINER_NETWORK_NAME}" \
     --hostname fleet-server \
     --network-alias fleet-server \
     -p "127.0.0.1:${FLEET_LOCAL_PORT}:8220" \
-    -v "dev-fleet-server:/usr/share/elastic-agent/state" \
+    -v "dev-fleet-server:/usr/share/elastic-agent/state:U" \
     -e "FLEET_SERVER_ENABLE=1" \
     -e "FLEET_SERVER_ELASTICSEARCH_HOST=http://elasticsearch:9200" \
     -e "FLEET_SERVER_POLICY_ID=fleet-server-policy" \
@@ -1031,6 +1035,8 @@ wait_for_healthcheck() {
     now=$(date +%s)
     if [ $((now - start_time)) -ge "${timeout_seconds}" ]; then
       echo "timed out."
+      echo "Container logs for '${name}':"
+      $CONTAINER_CLI logs --tail 100 "${name}" || true
       return 1
     fi
     sleep "${delay_seconds}"
