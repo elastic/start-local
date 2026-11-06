@@ -452,7 +452,9 @@ check_container_services() {
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
   check_container_running "$edot_container_name"
-  check_container_running "$fleet_container_name"
+  if [ "$fleet" = "true" ]; then
+    check_container_running "$fleet_container_name"
+  fi
 }
 
 create_installation_folder() {
@@ -1024,11 +1026,29 @@ wait_for_healthcheck() {
   delay_seconds=${HEALTHCHECK_DELAY:-10}
 
   start_time=$(date +%s)
+  # One attempt must return on its own. A readiness request with no deadline
+  # would block this loop, so the overall timeout would never be reached.
+  attempt_seconds=${HEALTHCHECK_ATTEMPT_TIMEOUT:-15}
   # shellcheck disable=SC2059
   printf "Waiting for '${name}' ... "
   while :; do
     # Execute the check command inside the container; it should return 0 on success.
-    if $CONTAINER_CLI exec "${name}" sh -c "$check_cmd" >/dev/null 2>&1 ; then
+    $CONTAINER_CLI exec "${name}" sh -c "$check_cmd" >/dev/null 2>&1 &
+    check_pid=$!
+    attempt_start=$(date +%s)
+    attempt_timed_out=false
+    while kill -0 "$check_pid" 2>/dev/null; do
+      now=$(date +%s)
+      if [ $((now - attempt_start)) -ge "${attempt_seconds}" ]; then
+        kill "$check_pid" 2>/dev/null || true
+        attempt_timed_out=true
+        break
+      fi
+      sleep 1
+    done
+    if [ "$attempt_timed_out" = true ]; then
+      wait "$check_pid" 2>/dev/null || true
+    elif wait "$check_pid"; then
       echo "healthy."
       return 0
     fi
@@ -1078,6 +1098,8 @@ configure_kibana_system_user_password() {
 
   until \
     curl \
+      --connect-timeout 5 \
+      --max-time 10 \
       -s \
       -X POST \
       "${ES_LOCAL_URL}/_security/user/kibana_system/_password" \
@@ -1180,7 +1202,7 @@ main() {
 
   # Start Elasticsearch and wait for it to respond to REST requests.
   start_container "${ES_LOCAL_CONTAINER_NAME}" || exit 1
-  es_check="curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200"
+  es_check="curl --connect-timeout 5 --max-time 10 --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200"
   wait_for_healthcheck "${ES_LOCAL_CONTAINER_NAME}" "$es_check" || exit 1
 
   # Create Elasticsearch API key for local use on first start.
@@ -1196,14 +1218,14 @@ main() {
 
     # Start Kibana and wait for it to respond to REST requests.
     start_container "${KIBANA_LOCAL_CONTAINER_NAME}" || exit 1
-    kibana_check="curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'"
+    kibana_check="curl --connect-timeout 5 --max-time 10 -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'"
     wait_for_healthcheck "${KIBANA_LOCAL_CONTAINER_NAME}" "$kibana_check" || exit 1
   fi
 
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
     # Start Fleet Server after Kibana is healthy so it can enroll.
     start_container "${FLEET_LOCAL_CONTAINER_NAME}" || exit 1
-    fleet_check="curl --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'"
+    fleet_check="curl --connect-timeout 5 --max-time 10 --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'"
     wait_for_healthcheck "${FLEET_LOCAL_CONTAINER_NAME}" "$fleet_check" || exit 1
   fi
 

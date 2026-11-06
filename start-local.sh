@@ -356,7 +356,7 @@ wait_for_kibana() {
   echo "- Waiting for Kibana to be ready"
   echo
   start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
+  until curl --connect-timeout 5 --max-time 10 -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Kibana timeout of ${timeout} sec"
@@ -387,7 +387,7 @@ wait_for_fleet() {
   start_time="$(date +%s)"
   # The published host port is 8220 during installation. Inside the container
   # Fleet Server always listens on 8220; this check runs on the host.
-  until curl --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '"HEALTHY"'; do
+  until curl --connect-timeout 5 --max-time 10 --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '"HEALTHY"'; do
     elapsed_time="$(($(date +%s) - start_time))"
     if [ "$elapsed_time" -ge "$timeout" ]; then
       error_msg="Error: Fleet Server timeout of ${timeout} sec"
@@ -545,7 +545,9 @@ check_docker_services() {
   check_container_running "$kibana_container_name"
   check_container_running "$kibana_settings_container_name"
   check_container_running "$edot_container_name"
-  check_container_running "$fleet_container_name"
+  if [ "$fleet" = "true" ]; then
+    check_container_running "$fleet_container_name"
+  fi
 }
 
 create_installation_folder() {
@@ -661,7 +663,7 @@ wait_for_kibana() {
   echo "- Waiting for Kibana to be ready"
   echo
   _start_time="$(date +%s)"
-  until curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
+  until curl --connect-timeout 5 --max-time 10 -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'; do
     elapsed_time="$(($(date +%s) - _start_time))"
     if [ "$elapsed_time" -ge "$_timeout" ]; then
       echo "Error: Kibana timeout of ${_timeout} sec"
@@ -679,7 +681,7 @@ wait_for_fleet() {
   echo "- Waiting for Fleet Server to be ready"
   echo
   _start_time="$(date +%s)"
-  until curl --noproxy '*' -k -s --fail "https://127.0.0.1:${FLEET_LOCAL_PORT}/api/status" | grep -q '"HEALTHY"'; do
+  until curl --connect-timeout 5 --max-time 10 --noproxy '*' -k -s --fail "https://127.0.0.1:${FLEET_LOCAL_PORT}/api/status" | grep -q '"HEALTHY"'; do
     elapsed_time="$(($(date +%s) - _start_time))"
     if [ "$elapsed_time" -ge "$_timeout" ]; then
       echo "Error: Fleet Server timeout of ${_timeout} sec"
@@ -992,7 +994,7 @@ add_fleet_service_in_docker_compose() {
       test:
         [
           "CMD-SHELL",
-          "curl --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'",
+          "curl --connect-timeout 5 --max-time 10 --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'",
         ]
       interval: 10s
       timeout: 10s
@@ -1078,7 +1080,7 @@ EOM
       test:
         [
           "CMD-SHELL",
-          "curl --noproxy '*' --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
+          "curl --connect-timeout 5 --max-time 10 --noproxy '*' --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200",
         ]
       interval: 10s
       timeout: 10s
@@ -1100,7 +1102,7 @@ if  [ "$esonly" = "false" ]; then
         echo "Setup the kibana_system password";
         start_time=$$(date +%s);
         timeout=60;
-        until curl --noproxy "*" -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
+        until curl --connect-timeout 5 --max-time 10 --noproxy "*" -s -u "elastic:${ES_LOCAL_PASSWORD}" -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_LOCAL_PASSWORD}\"}" -H "Content-Type: application/json" | grep -q "^{}"; do
           if [ $$(($$(date +%s) - $$start_time)) -ge $$timeout ]; then
             echo "Error: Elasticsearch timeout";
             exit 1;
@@ -1164,7 +1166,7 @@ fi
       test:
         [
           "CMD-SHELL",
-          "curl --noproxy '*' -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
+          "curl --connect-timeout 5 --max-time 10 --noproxy '*' -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
         ]
       interval: 10s
       timeout: 10s
