@@ -854,7 +854,7 @@ create_kibana_container() {
   kibana_args=""
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
     fleet_env="-e XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=[\"https://localhost:${FLEET_LOCAL_PORT}\"] -e XPACK_FLEET_PACKAGES=[{\"name\":\"fleet_server\",\"version\":\"latest\"},{\"name\":\"system\",\"version\":\"latest\"},{\"name\":\"elastic_agent\",\"version\":\"latest\"}] -e XPACK_FLEET_AGENTPOLICIES=[{\"name\":\"Fleet-Server-Policy\",\"id\":\"fleet-server-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"data_output_id\":\"fleet-server-output\",\"monitoring_output_id\":\"fleet-server-output\",\"package_policies\":[{\"name\":\"fleet_server-1\",\"id\":\"fleet_server-1\",\"package\":{\"name\":\"fleet_server\"}},{\"name\":\"system-1\",\"id\":\"system-1\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-1\",\"id\":\"elastic_agent-1\",\"package\":{\"name\":\"elastic_agent\"}}]},{\"name\":\"Agent-Policy\",\"id\":\"agent-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"is_default\":true,\"data_output_id\":\"agent-output\",\"monitoring_output_id\":\"agent-output\",\"package_policies\":[{\"name\":\"system-2\",\"id\":\"system-2\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-2\",\"id\":\"elastic_agent-2\",\"package\":{\"name\":\"elastic_agent\"}}]}]"
-    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":false,\"is_default_monitoring\":false},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":true,\"is_default_monitoring\":true}]"
+    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":true,\"is_default_monitoring\":true},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":false,\"is_default_monitoring\":false}]"
   fi
   if [ -n "${kibana_args}" ]; then
     set -- /usr/local/bin/kibana-docker "${kibana_args}"
@@ -1489,15 +1489,19 @@ remove_container() {
 remove_elasticsearch_container() {
   [ -n "${ES_LOCAL_CONTAINER_NAME:-}" ] || { echo "ES_LOCAL_CONTAINER_NAME not set"; return 1; }
 
-  remove_container "${ES_LOCAL_CONTAINER_NAME}"
-  remove_volume dev-elasticsearch
+  remove_status=0
+  remove_container "${ES_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume dev-elasticsearch || remove_status=1
+  return "$remove_status"
 }
 
 remove_kibana_container() {
   [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ] || { echo "KIBANA_LOCAL_CONTAINER_NAME not set"; return 1; }
 
-  remove_container "${KIBANA_LOCAL_CONTAINER_NAME}"
-  remove_volume dev-kibana
+  remove_status=0
+  remove_container "${KIBANA_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume dev-kibana || remove_status=1
+  return "$remove_status"
 }
 
 remove_edot_container() {
@@ -1509,27 +1513,31 @@ remove_edot_container() {
 remove_fleet_container() {
   [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] || { echo "FLEET_LOCAL_CONTAINER_NAME not set"; return 1; }
 
-  remove_container "${FLEET_LOCAL_CONTAINER_NAME}"
-  remove_volume dev-fleet-server
+  remove_status=0
+  remove_container "${FLEET_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume dev-fleet-server || remove_status=1
+  return "$remove_status"
 }
 
 main() {
   # Keep going after a removal error so one stuck container does not leave
-  # the rest of the stack behind.
+  # the rest of the stack behind, but report incomplete teardown to callers.
+  down_status=0
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_fleet_container || true
+    remove_fleet_container || down_status=1
   fi
 
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_edot_container || true
+    remove_edot_container || down_status=1
   fi
 
   if [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_kibana_container || true
+    remove_kibana_container || down_status=1
   fi
 
-  remove_elasticsearch_container || true
-  remove_bridged_network || true
+  remove_elasticsearch_container || down_status=1
+  remove_bridged_network || down_status=1
+  return "$down_status"
 }
 
 main

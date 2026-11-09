@@ -1157,7 +1157,7 @@ if [ "$fleet" = "true" ]; then
     # stays on the container network.
     command:
       - /usr/local/bin/kibana-docker
-      - '--xpack.fleet.outputs=[{"id":"fleet-server-output","name":"Fleet-Server","type":"elasticsearch","hosts":["http://elasticsearch:9200"],"is_default":false,"is_default_monitoring":false},{"id":"agent-output","name":"Elasticsearch","type":"elasticsearch","hosts":["http://localhost:${ES_LOCAL_PORT}"],"is_default":true,"is_default_monitoring":true}]'
+      - '--xpack.fleet.outputs=[{"id":"fleet-server-output","name":"Fleet-Server","type":"elasticsearch","hosts":["http://elasticsearch:9200"],"is_default":true,"is_default_monitoring":true},{"id":"agent-output","name":"Elasticsearch","type":"elasticsearch","hosts":["http://localhost:${ES_LOCAL_PORT}"],"is_default":false,"is_default_monitoring":false}]'
 EOM
 fi
 

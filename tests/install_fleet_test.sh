@@ -72,9 +72,9 @@ function test_published_port_stays_separate_from_container_port() {
         config=$(cat "${DEFAULT_DIR}/up.sh")
     fi
 
-    assert_contains 'FLEET_URL=https://localhost:8220' "$config"
-    assert_contains '127.0.0.1:${FLEET_LOCAL_PORT}:8220' "$config"
-    assert_contains 'https://localhost:${FLEET_LOCAL_PORT}' "$config"
+    assert_contains "FLEET_URL=https://localhost:8220" "$config"
+    assert_contains "127.0.0.1:\${FLEET_LOCAL_PORT}:8220" "$config"
+    assert_contains "https://localhost:\${FLEET_LOCAL_PORT}" "$config"
 }
 
 function test_policies_use_separate_elasticsearch_outputs() {
