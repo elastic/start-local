@@ -41,8 +41,22 @@ function test_fleet_server_container_is_running() {
 }
 
 function test_fleet_server_status_is_healthy() {
-    response=$(curl -k -s https://localhost:8220/api/status)
-    result=$(curl -k -s -o /dev/null -w "%{http_code}\n" https://localhost:8220/api/status)
+    response_file=$(mktemp)
+    result=""
+    response=""
+
+    # Fleet Server can briefly return 503 while applying its enrolled policy,
+    # even after the installer observed a healthy bootstrap response.
+    for ((attempt = 1; attempt <= 30; attempt++)); do
+        result=$(curl --connect-timeout 5 --max-time 10 -k -s -o "$response_file" \
+            -w "%{http_code}\n" https://localhost:8220/api/status) || result="000"
+        response=$(cat "$response_file")
+        if [ "$result" = "200" ] && [[ "$response" == *'"HEALTHY"'* ]]; then
+            break
+        fi
+        sleep 2
+    done
+    rm -f "$response_file"
 
     assert_equals "200" "$result"
     assert_contains "\"HEALTHY\"" "$response"

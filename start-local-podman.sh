@@ -1416,12 +1416,16 @@ remove_bridged_network() {
     return 0
   fi
 
-  # Try graceful removal the network; if it's in use this will typically fail.
-  "$CONTAINER_CLI" network rm "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1 || true
-
-  # Force remove.
-  if "$CONTAINER_CLI" network rm -f "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
+  # Try graceful removal first. Only force removal if the network is still
+  # present; otherwise a successful graceful removal would be reported as a
+  # failure when the second command cannot find it.
+  if "$CONTAINER_CLI" network rm "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
     echo "done (removed)."
+    return 0
+  fi
+
+  if "$CONTAINER_CLI" network rm -f "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
+    echo "done (force removed)."
     return 0
   fi
 
