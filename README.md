@@ -93,12 +93,30 @@ This command will install the latest Elasticsearch, Kibana and EDOT collector.
 [Here](https://www.elastic.co/docs/reference/opentelemetry) you can find more information about
 Elastic Distributions of OpenTelemetry (EDOT).
 
+### Install Fleet Server
+
+You can install [Fleet Server](https://www.elastic.co/docs/reference/fleet/fleet-server)
+using the `--fleet` option, as follows (for Podman, replace `start-local` with `start-local-podman`):
+
+```bash
+curl -fsSL https://elastic.co/start-local | sh -s -- --fleet
+```
+
+This command installs Elasticsearch, Kibana, and a Fleet Server.
+Fleet Server listens on <https://localhost:8220> with a self-signed TLS certificate.
+Elastic Agents that enroll in this Fleet Server must use the `--insecure` flag.
+Agents installed on the host send data to Elasticsearch at <http://localhost:9200>.
+The Fleet Server container uses <http://elasticsearch:9200> on the container network.
+
+`--fleet` cannot be combined with `--esonly`, because Fleet Server enrolls through Kibana.
+
 ### 🌐 Endpoints
 
 After running the script:
 
 - Elasticsearch will be running at <http://localhost:9200>
 - Kibana will be running at <http://localhost:5601>
+- Fleet Server, when installed with `--fleet`, will be running at <https://localhost:8220>
 
 The script generates a random password for the `elastic` user, displayed at the end of the installation and stored in the `.env` file.
 
