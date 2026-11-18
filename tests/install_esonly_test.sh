@@ -41,7 +41,7 @@ function test_kibana_is_not_in_env() {
 }
 
 function test_kibana_container_is_not_running() {  
-    containers="$($TEST_CONTAINER_CLI ps --format '{{.Names}}')"
+    containers="$(list_running_containers)"
     assert_not_contains "kibana" "$containers"
 }
 
