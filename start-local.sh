@@ -775,6 +775,14 @@ add_edot_config_in_docker_compose() {
   if [ "$(compare_versions "$es_version" "9.2.0")" = "lt" ];then
     trace_processor_name="elastictrace"
   fi
+  # The mapping.mode option has been removed from the Elasticsearch exporter
+  # starting from 9.5.7 (otel is the default), so it must be omitted there.
+  edot_mapping_config="
+          mapping:
+            mode: otel"
+  if [ "$(compare_versions "${es_version%%-*}" "9.5.7")" != "lt" ];then
+    edot_mapping_config=""
+  fi
   # shellcheck disable=SC2016
   es_local_password_var='${ES_LOCAL_PASSWORD}'
   # Add the OTLP configs in docker-compose.yml
@@ -824,9 +832,7 @@ configs:
           user: elastic
           password: ${es_local_password_var}
           tls:
-            insecure_skip_verify: true
-          mapping:
-            mode: otel
+            insecure_skip_verify: true${edot_mapping_config}
 
       service:
         extensions: [ apmconfig ]
