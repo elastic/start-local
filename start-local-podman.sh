@@ -139,12 +139,34 @@ get_latest_version() {
   echo "$latest_version"
 }
 
-# Revert the status, removing containers, volumes, network and folder
+# Revert the status, removing containers, volumes, network and folder.
+# down.sh does not prompt. uninstall.sh does, so a failed start would leave
+# containers running and the later tests would collide with them.
 cleanup() {
+  # Only roll back what this invocation created.
+  [ "${installation_claimed:-false}" = "true" ] || return 0
   if [ -d "$installation_folder" ]; then
-    if [ -f "uninstall.sh" ]; then
-      "$installation_folder/stop.sh" >/dev/null 2>&1 || true
-      "$installation_folder/uninstall.sh" >/dev/null 2>&1 || true
+    if [ -f "$installation_folder/down.sh" ]; then
+      ( cd "$installation_folder" && ./down.sh ) >/dev/null 2>&1 || true
+    fi
+
+    # down.sh can still stop early if it cannot start. Remove anything it left
+    # so a partial failure does not keep containers after this folder is deleted.
+    if [ -n "${container_cli:-}" ]; then
+      if [ "${fleet:-false}" = "true" ]; then
+        "$container_cli" rm -f "$fleet_container_name" >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f "$fleet_volume_name" >/dev/null 2>&1 || true
+      fi
+      if [ "${edot:-false}" = "true" ]; then
+        "$container_cli" rm -f "$edot_container_name" >/dev/null 2>&1 || true
+      fi
+      if [ "${esonly:-false}" != "true" ]; then
+        "$container_cli" rm -f "$kibana_container_name" >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f "$kibana_volume_name" >/dev/null 2>&1 || true
+      fi
+      "$container_cli" rm -f "$elasticsearch_container_name" >/dev/null 2>&1 || true
+      "$container_cli" volume rm -f "$elasticsearch_volume_name" >/dev/null 2>&1 || true
+      "$container_cli" network rm "$container_network_name" >/dev/null 2>&1 || true
     fi
 
     rm -rf "$installation_folder"
@@ -219,12 +241,17 @@ generate_error_log() {
     if [ "$edot" = "true" ]; then
       echo "--edot parameter used"
     fi
+    if [ "$fleet" = "true" ]; then
+      echo "--fleet parameter used"
+    fi
     get_os_info
   } >> "$error_file"
 
   for service in $services; do
     echo "-- Logs of service ${service}:" >> "$error_file"
-    $container_cli logs "${service}" >> "$error_file" 2> /dev/null
+    # A missing container must not abort this function. The caller still has
+    # to run cleanup, and set -e would skip it when logs returns non-zero.
+    $container_cli logs "${service}" >> "$error_file" 2>/dev/null || true
   done
 
   echo "An error log has been generated in '${error_log}' file."
@@ -264,6 +291,16 @@ startup() {
   kibana_container_name="kibana-local-dev${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # EDOT container name
   edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Fleet Server container name
+  fleet_container_name="fleet-server${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Volume names. Scoped like the containers so installations in different
+  # ES_LOCAL_DIR folders never share or remove each other's data.
+  elasticsearch_volume_name="dev-elasticsearch${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  kibana_volume_name="dev-kibana${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  fleet_volume_name="dev-fleet-server${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Set once this run has created the installation folder. cleanup() does
+  # nothing before then, so an interrupt cannot touch an existing installation.
+  installation_claimed=false
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 
@@ -275,6 +312,7 @@ parse_args() {
   # Parameters
   esonly=false
   edot=false
+  fleet=false
 
   # Parse the script parameters.
   while [ "$#" -gt 0 ]; do
@@ -299,6 +337,11 @@ parse_args() {
         shift
         ;;
 
+      --fleet)
+        fleet=true
+        shift
+        ;;
+
       --)
         # End of options; shift and exit the loop.
         shift
@@ -317,6 +360,12 @@ parse_args() {
         ;;
     esac
   done
+
+  # Fleet Server enrolls through Kibana, so it cannot run without Kibana
+  if [ "$fleet" = "true" ] && [ "$esonly" = "true" ]; then
+    echo "Error: --fleet cannot be used with --esonly"
+    exit 1
+  fi
 }
 
 check_requirements() {
@@ -434,12 +483,17 @@ check_container_services() {
   check_container_running "$elasticsearch_container_name"
   check_container_running "$kibana_container_name"
   check_container_running "$edot_container_name"
+  if [ "$fleet" = "true" ]; then
+    check_container_running "$fleet_container_name"
+  fi
 }
 
 create_installation_folder() {
   if [ ! -d "$folder" ]; then 
     mkdir "$folder"
   fi
+  # check_installation_folder already rejected a non-empty folder.
+  installation_claimed=true
   cd "$folder"
 }
 
@@ -482,6 +536,7 @@ CONTAINER_CLI=$container_cli
 CONTAINER_NETWORK_NAME=$container_network_name
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
+ES_LOCAL_VOLUME_NAME=$elasticsearch_volume_name
 ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
@@ -490,10 +545,9 @@ ES_LOCAL_DISK_SPACE_REQUIRED=1gb
 ES_LOCAL_LICENSE_EXPIRE_DATE=$license_expire
 EOM
 
-  if [ "$edot" = "true" ]; then
+  if [ "$edot" = "true" ] || [ "$fleet" = "true" ]; then
     cat >> .env <<- EOM
 ES_LOCAL_JAVA_OPTS="-Xms2g -Xmx2g"
-EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
 EOM
   else
     cat >> .env <<- EOM
@@ -501,9 +555,25 @@ ES_LOCAL_JAVA_OPTS="-Xms128m -Xmx2g"
 EOM
   fi
 
+  if [ "$edot" = "true" ]; then
+    cat >> .env <<- EOM
+EDOT_LOCAL_CONTAINER_NAME=$edot_container_name
+EOM
+  fi
+
+  if [ "$fleet" = "true" ]; then
+    cat >> .env <<- EOM
+FLEET_LOCAL_CONTAINER_NAME=$fleet_container_name
+FLEET_LOCAL_VOLUME_NAME=$fleet_volume_name
+FLEET_LOCAL_PORT=8220
+FLEET_LOCAL_URL=https://localhost:\${FLEET_LOCAL_PORT}
+EOM
+  fi
+
   if [ "$esonly" = "false" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
+KIBANA_LOCAL_VOLUME_NAME=$kibana_volume_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -747,7 +817,7 @@ create_elasticsearch_container() {
     --hostname elasticsearch \
     --network-alias elasticsearch \
     -p "127.0.0.1:${ES_LOCAL_PORT}:9200" \
-    -v "dev-elasticsearch:/usr/share/elasticsearch/data" \
+    -v "${ES_LOCAL_VOLUME_NAME:-dev-elasticsearch}:/usr/share/elasticsearch/data" \
     -e "discovery.type=single-node" \
     -e "ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}" \
     -e "xpack.security.enabled=true" \
@@ -797,6 +867,22 @@ create_kibana_container() {
     telemetry_mount=""
   fi
 
+  # Fleet preconfiguration. Values must not contain spaces: kibana-docker splits
+  # long options on whitespace when translating environment variables.
+  # xpack.fleet.outputs is not in that allowlist, so it is passed as a Kibana
+  # argument. The image entrypoint is tini and its command is kibana-docker.
+  fleet_env=""
+  kibana_args=""
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    fleet_env="-e XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=[\"https://localhost:${FLEET_LOCAL_PORT}\"] -e XPACK_FLEET_PACKAGES=[{\"name\":\"fleet_server\",\"version\":\"latest\"},{\"name\":\"system\",\"version\":\"latest\"},{\"name\":\"elastic_agent\",\"version\":\"latest\"}] -e XPACK_FLEET_AGENTPOLICIES=[{\"name\":\"Fleet-Server-Policy\",\"id\":\"fleet-server-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"data_output_id\":\"fleet-server-output\",\"monitoring_output_id\":\"fleet-server-output\",\"package_policies\":[{\"name\":\"fleet_server-1\",\"id\":\"fleet_server-1\",\"package\":{\"name\":\"fleet_server\"}},{\"name\":\"system-1\",\"id\":\"system-1\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-1\",\"id\":\"elastic_agent-1\",\"package\":{\"name\":\"elastic_agent\"}}]},{\"name\":\"Agent-Policy\",\"id\":\"agent-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"is_default\":true,\"data_output_id\":\"agent-output\",\"monitoring_output_id\":\"agent-output\",\"package_policies\":[{\"name\":\"system-2\",\"id\":\"system-2\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-2\",\"id\":\"elastic_agent-2\",\"package\":{\"name\":\"elastic_agent\"}}]}]"
+    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":false,\"is_default_monitoring\":false},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":true,\"is_default_monitoring\":true}]"
+  fi
+  if [ -n "${kibana_args}" ]; then
+    set -- /usr/local/bin/kibana-docker "${kibana_args}"
+  else
+    set --
+  fi
+
   # shellcheck disable=SC2086
   if ! output=$("$CONTAINER_CLI" create \
     --name "${KIBANA_LOCAL_CONTAINER_NAME}" \
@@ -804,7 +890,7 @@ create_kibana_container() {
     --hostname kibana \
     --network-alias kibana \
     -p "127.0.0.1:${KIBANA_LOCAL_PORT}:5601" \
-    -v "dev-kibana:/usr/share/kibana/data" \
+    -v "${KIBANA_LOCAL_VOLUME_NAME:-dev-kibana}:/usr/share/kibana/data" \
     $telemetry_mount \
     -e "SERVER_NAME=kibana" \
     -e "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" \
@@ -813,7 +899,9 @@ create_kibana_container() {
     -e "XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:-}" \
     -e "ELASTICSEARCH_PUBLICBASEURL=http://localhost:${ES_LOCAL_PORT}" \
     -e "XPACK_SPACES_DEFAULTSOLUTION=es" \
-    "${image}" 2>&1); then
+    $fleet_env \
+    "${image}" \
+    "$@" 2>&1); then
     echo "failed."
     printf '%s\n' "$output"
     return 1
@@ -863,6 +951,58 @@ create_edot_container() {
   return 0
 }
 
+create_fleet_container() {
+  [ -n "${CONTAINER_NETWORK_NAME:-}" ] || { echo "CONTAINER_NETWORK_NAME not set"; return 1; }
+  [ -n "${ES_LOCAL_VERSION:-}" ] || { echo "ES_LOCAL_VERSION not set"; return 1; }
+  [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] || { echo "FLEET_LOCAL_CONTAINER_NAME not set"; return 1; }
+  [ -n "${FLEET_LOCAL_PORT:-}" ] || { echo "FLEET_LOCAL_PORT not set"; return 1; }
+  [ -n "${ES_LOCAL_PASSWORD:-}" ] || { echo "ES_LOCAL_PASSWORD not set"; return 1; }
+
+  image="docker.elastic.co/elastic-agent/elastic-agent:${ES_LOCAL_VERSION}"
+
+  # shellcheck disable=SC2059
+  printf "Creating container '${FLEET_LOCAL_CONTAINER_NAME}' from image '${image}' ... "
+
+  # If container exists, do nothing.
+  if "$CONTAINER_CLI" ps -a --format '{{.Names}}' 2>/dev/null | grep -qxF "${FLEET_LOCAL_CONTAINER_NAME}"; then
+    echo "done (already exists)."
+    return 0
+  fi
+
+  # FLEET_URL uses port 8220 because enrollment runs inside this container.
+  # FLEET_LOCAL_PORT is only the published host port.
+  # :U chowns the state volume to the container user (uid 1000). Rootless Podman
+  # otherwise leaves that named volume owned by root, and Fleet Server exits
+  # before it can listen.
+  if ! output=$("$CONTAINER_CLI" create \
+    --name "${FLEET_LOCAL_CONTAINER_NAME}" \
+    --network "${CONTAINER_NETWORK_NAME}" \
+    --hostname fleet-server \
+    --network-alias fleet-server \
+    -p "127.0.0.1:${FLEET_LOCAL_PORT}:8220" \
+    -v "${FLEET_LOCAL_VOLUME_NAME:-dev-fleet-server}:/usr/share/elastic-agent/state:U" \
+    -e "FLEET_SERVER_ENABLE=1" \
+    -e "FLEET_SERVER_ELASTICSEARCH_HOST=http://elasticsearch:9200" \
+    -e "FLEET_SERVER_POLICY_ID=fleet-server-policy" \
+    -e "FLEET_SERVER_HOST=0.0.0.0" \
+    -e "FLEET_SERVER_PORT=8220" \
+    -e "KIBANA_FLEET_SETUP=1" \
+    -e "KIBANA_HOST=http://kibana:5601" \
+    -e "KIBANA_FLEET_USERNAME=elastic" \
+    -e "KIBANA_FLEET_PASSWORD=${ES_LOCAL_PASSWORD}" \
+    -e "FLEET_ENROLL=1" \
+    -e "FLEET_URL=https://localhost:8220" \
+    -e "FLEET_INSECURE=true" \
+    "${image}" 2>&1); then
+    echo "failed."
+    printf '%s\n' "$output"
+    return 1
+  fi
+
+  echo "done (created)."
+  return 0
+}
+
 main() {
   create_bridged_network
   create_elasticsearch_container
@@ -873,6 +1013,10 @@ main() {
 
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
     create_edot_container
+  fi
+
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    create_fleet_container
   fi
 }
 
@@ -924,17 +1068,37 @@ wait_for_healthcheck() {
   delay_seconds=${HEALTHCHECK_DELAY:-10}
 
   start_time=$(date +%s)
+  # One attempt must return on its own. A readiness request with no deadline
+  # would block this loop, so the overall timeout would never be reached.
+  attempt_seconds=${HEALTHCHECK_ATTEMPT_TIMEOUT:-15}
   # shellcheck disable=SC2059
   printf "Waiting for '${name}' ... "
   while :; do
     # Execute the check command inside the container; it should return 0 on success.
-    if $CONTAINER_CLI exec "${name}" sh -c "$check_cmd" >/dev/null 2>&1 ; then
+    $CONTAINER_CLI exec "${name}" sh -c "$check_cmd" >/dev/null 2>&1 &
+    check_pid=$!
+    attempt_start=$(date +%s)
+    attempt_timed_out=false
+    while kill -0 "$check_pid" 2>/dev/null; do
+      now=$(date +%s)
+      if [ $((now - attempt_start)) -ge "${attempt_seconds}" ]; then
+        kill "$check_pid" 2>/dev/null || true
+        attempt_timed_out=true
+        break
+      fi
+      sleep 1
+    done
+    if [ "$attempt_timed_out" = true ]; then
+      wait "$check_pid" 2>/dev/null || true
+    elif wait "$check_pid"; then
       echo "healthy."
       return 0
     fi
     now=$(date +%s)
     if [ $((now - start_time)) -ge "${timeout_seconds}" ]; then
       echo "timed out."
+      echo "Container logs for '${name}':"
+      $CONTAINER_CLI logs --tail 100 "${name}" || true
       return 1
     fi
     sleep "${delay_seconds}"
@@ -976,6 +1140,8 @@ configure_kibana_system_user_password() {
 
   until \
     curl \
+      --connect-timeout 5 \
+      --max-time 10 \
       -s \
       -X POST \
       "${ES_LOCAL_URL}/_security/user/kibana_system/_password" \
@@ -1076,9 +1242,31 @@ main() {
   HEALTHCHECK_TIMEOUT=${HEALTHCHECK_TIMEOUT:-300}
   HEALTHCHECK_DELAY=${HEALTHCHECK_DELAY:-10}
 
+  # Published ports and Kibana's Fleet URL are fixed when the containers are
+  # created. If FLEET_LOCAL_PORT changed in .env, recreate Fleet and Kibana
+  # (their named volumes are kept) so the new value takes effect.
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] && [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ] \
+    && $CONTAINER_CLI inspect "${FLEET_LOCAL_CONTAINER_NAME}" >/dev/null 2>&1; then
+    # Read the configured binding from inspect: `port` prints nothing for a
+    # stopped container, which is the normal stop.sh/start.sh case.
+    current_fleet_port=$($CONTAINER_CLI inspect "${FLEET_LOCAL_CONTAINER_NAME}" \
+      --format '{{range index .HostConfig.PortBindings "8220/tcp"}}{{.HostPort}}{{end}}' 2>/dev/null | head -n 1)
+    if [ -n "$current_fleet_port" ] && [ "$current_fleet_port" != "${FLEET_LOCAL_PORT}" ]; then
+      echo "FLEET_LOCAL_PORT changed (${current_fleet_port} -> ${FLEET_LOCAL_PORT}), recreating Fleet Server and Kibana containers."
+      # Do not continue with stale configuration if a container cannot be
+      # removed: up.sh skips containers that still exist.
+      if ! output=$($CONTAINER_CLI rm -f "${FLEET_LOCAL_CONTAINER_NAME}" "${KIBANA_LOCAL_CONTAINER_NAME}" 2>&1); then
+        echo "Error: failed to remove the Fleet Server and Kibana containers."
+        printf '%s\n' "$output"
+        exit 1
+      fi
+      "$script_dir/up.sh" || exit 1
+    fi
+  fi
+
   # Start Elasticsearch and wait for it to respond to REST requests.
   start_container "${ES_LOCAL_CONTAINER_NAME}" || exit 1
-  es_check="curl --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200"
+  es_check="curl --connect-timeout 5 --max-time 10 --output /dev/null --silent --head --fail -u elastic:${ES_LOCAL_PASSWORD} http://elasticsearch:9200"
   wait_for_healthcheck "${ES_LOCAL_CONTAINER_NAME}" "$es_check" || exit 1
 
   # Create Elasticsearch API key for local use on first start.
@@ -1094,8 +1282,15 @@ main() {
 
     # Start Kibana and wait for it to respond to REST requests.
     start_container "${KIBANA_LOCAL_CONTAINER_NAME}" || exit 1
-    kibana_check="curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'"
+    kibana_check="curl --connect-timeout 5 --max-time 10 -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'"
     wait_for_healthcheck "${KIBANA_LOCAL_CONTAINER_NAME}" "$kibana_check" || exit 1
+  fi
+
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    # Start Fleet Server after Kibana is healthy so it can enroll.
+    start_container "${FLEET_LOCAL_CONTAINER_NAME}" || exit 1
+    fleet_check="curl --connect-timeout 5 --max-time 10 --noproxy '*' -k -s --fail https://127.0.0.1:8220/api/status | grep -q '\"HEALTHY\"'"
+    wait_for_healthcheck "${FLEET_LOCAL_CONTAINER_NAME}" "$fleet_check" || exit 1
   fi
 
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
@@ -1192,7 +1387,17 @@ stop_edot_container() {
   stop_container "${EDOT_LOCAL_CONTAINER_NAME}"
 }
 
+stop_fleet_container() {
+  [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] || { echo "FLEET_LOCAL_CONTAINER_NAME not set"; return 1; }
+
+  stop_container "${FLEET_LOCAL_CONTAINER_NAME}"
+}
+
 main() {
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    stop_fleet_container
+  fi
+
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
     stop_edot_container
   fi
@@ -1254,12 +1459,16 @@ remove_bridged_network() {
     return 0
   fi
 
-  # Try graceful removal the network; if it's in use this will typically fail.
-  "$CONTAINER_CLI" network rm "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1 || true
-
-  # Force remove.
-  if "$CONTAINER_CLI" network rm -f "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
+  # Try graceful removal first. Only force removal if the network is still
+  # present; otherwise a successful graceful removal would be reported as a
+  # failure when the second command cannot find it.
+  if "$CONTAINER_CLI" network rm "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
     echo "done (removed)."
+    return 0
+  fi
+
+  if "$CONTAINER_CLI" network rm -f "${CONTAINER_NETWORK_NAME}" >/dev/null 2>&1; then
+    echo "done (force removed)."
     return 0
   fi
 
@@ -1327,15 +1536,19 @@ remove_container() {
 remove_elasticsearch_container() {
   [ -n "${ES_LOCAL_CONTAINER_NAME:-}" ] || { echo "ES_LOCAL_CONTAINER_NAME not set"; return 1; }
 
-  remove_container "${ES_LOCAL_CONTAINER_NAME}"
-  remove_volume dev-elasticsearch
+  remove_status=0
+  remove_container "${ES_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume "${ES_LOCAL_VOLUME_NAME:-dev-elasticsearch}" || remove_status=1
+  return "$remove_status"
 }
 
 remove_kibana_container() {
   [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ] || { echo "KIBANA_LOCAL_CONTAINER_NAME not set"; return 1; }
 
-  remove_container "${KIBANA_LOCAL_CONTAINER_NAME}"
-  remove_volume dev-kibana
+  remove_status=0
+  remove_container "${KIBANA_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume "${KIBANA_LOCAL_VOLUME_NAME:-dev-kibana}" || remove_status=1
+  return "$remove_status"
 }
 
 remove_edot_container() {
@@ -1344,17 +1557,34 @@ remove_edot_container() {
   remove_container "${EDOT_LOCAL_CONTAINER_NAME}"
 }
 
+remove_fleet_container() {
+  [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] || { echo "FLEET_LOCAL_CONTAINER_NAME not set"; return 1; }
+
+  remove_status=0
+  remove_container "${FLEET_LOCAL_CONTAINER_NAME}" || remove_status=1
+  remove_volume "${FLEET_LOCAL_VOLUME_NAME:-dev-fleet-server}" || remove_status=1
+  return "$remove_status"
+}
+
 main() {
+  # Keep going after a removal error so one stuck container does not leave
+  # the rest of the stack behind, but report incomplete teardown to callers.
+  down_status=0
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    remove_fleet_container || down_status=1
+  fi
+
   if [ -n "${EDOT_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_edot_container
+    remove_edot_container || down_status=1
   fi
 
   if [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ]; then
-    remove_kibana_container
+    remove_kibana_container || down_status=1
   fi
 
-  remove_elasticsearch_container
-  remove_bridged_network
+  remove_elasticsearch_container || down_status=1
+  remove_bridged_network || down_status=1
+  return "$down_status"
 }
 
 main
@@ -1450,6 +1680,10 @@ main() {
     echo "- docker.elastic.co/elastic-agent/elastic-otel-collector:${ES_LOCAL_VERSION}"
   fi
 
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    echo "- docker.elastic.co/elastic-agent/elastic-agent:${ES_LOCAL_VERSION}"
+  fi
+
   if ! ask_confirmation; then
     echo "Elastic start-local successfully removed."
     return 0
@@ -1468,6 +1702,11 @@ main() {
       echo "Failed to remove 'docker.elastic.co/elastic-agent/elastic-otel-collector' image."
   fi
 
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
+    $CONTAINER_CLI rmi "docker.elastic.co/elastic-agent/elastic-agent:${ES_LOCAL_VERSION}" >/dev/null 2>&1 || \
+      echo "Failed to remove 'docker.elastic.co/elastic-agent/elastic-agent' image."
+  fi
+
   echo "Elastic start-local successfully removed."
 }
 
@@ -1479,8 +1718,12 @@ EOM
 print_steps() {
   if  [ "$esonly" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch v${es_version}..."
+  elif [ "$edot" = "true" ] && [ "$fleet" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana, EDOT collector and Fleet Server v${es_version}..."
   elif [ "$edot" = "true" ]; then
     echo "⌛️ Setting up Elasticsearch, Kibana and EDOT collector v${es_version}..."
+  elif [ "$fleet" = "true" ]; then
+    echo "⌛️ Setting up Elasticsearch, Kibana and Fleet Server v${es_version}..."
   else
     echo "⌛️ Setting up Elasticsearch and Kibana v${es_version}..."
   fi
@@ -1504,14 +1747,18 @@ initialize_containers() {
   error_msg="Error: Container initialization failed!"
   echo "$error_msg"
   if [ "$esonly" = "true" ]; then
-    generate_error_log "${error_msg}" "${elasticsearch_container_name}"
-  elif [ "$edot" = "true" ]; then
-    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name} ${edot_container_name}"
+    services="${elasticsearch_container_name}"
   else
-    generate_error_log "${error_msg}" "${elasticsearch_container_name} ${kibana_container_name}"
+    services="${elasticsearch_container_name} ${kibana_container_name}"
+    if [ "$edot" = "true" ]; then
+      services="${services} ${edot_container_name}"
+    fi
+    if [ "$fleet" = "true" ]; then
+      services="${services} ${fleet_container_name}"
+    fi
   fi
-
-  cleanup
+  generate_error_log "${error_msg}" "${services}" || true
+  cleanup || true
   exit 1
 }
 
@@ -1520,8 +1767,12 @@ success() {
   if  [ "$esonly" = "true" ]; then
     echo "🎉 Congrats, Elasticsearch is installed and running!"
   else
-    if [ "$edot" = "true" ]; then
+    if [ "$edot" = "true" ] && [ "$fleet" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana, EDOT collector and Fleet Server are installed and running!"
+    elif [ "$edot" = "true" ]; then
       echo "🎉 Congrats, Elasticsearch, Kibana and EDOT collector are installed and running!"
+    elif [ "$fleet" = "true" ]; then
+      echo "🎉 Congrats, Elasticsearch, Kibana and Fleet Server are installed and running!"
     else
       echo "🎉 Congrats, Elasticsearch and Kibana are installed and running!"
     fi
@@ -1537,6 +1788,9 @@ success() {
   if [ "$edot" = "true" ]; then
     echo "🔭 OTLP endpoints: gRPC http://localhost:4317 and HTTP http://localhost:4318"
     echo "🔭 OpAMP endpoint: http://localhost:4320/v1/opamp"
+  fi
+  if [ "$fleet" = "true" ]; then
+    echo "🛸 Fleet Server endpoint: https://localhost:8220 (self-signed TLS, use --insecure)"
   fi
 
   # Load ES_LOCAL_API_KEY environment variable.
