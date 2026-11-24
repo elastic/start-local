@@ -140,6 +140,6 @@ function test_changed_fleet_port_applies_after_restart() {
 
     agent_id_after=$(curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -H "kbn-xsrf: true" "$agents_url" \
         | grep -o '"id":"[^"]*"' | head -n 1)
-    assert_not_empty "$agent_id_before"
+    assert_not_equals "" "$agent_id_before"
     assert_equals "$agent_id_before" "$agent_id_after"
 }
