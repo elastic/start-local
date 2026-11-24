@@ -110,3 +110,36 @@ function test_policies_use_separate_elasticsearch_outputs() {
     assert_contains "fleet-server-output" "$fleet_policy"
     assert_contains "agent-output" "$agent_policy"
 }
+
+# Keep this test last: it changes FLEET_LOCAL_PORT and restarts the stack.
+# stop.sh leaves containers stopped, so the port change must be detected on a
+# stopped Fleet container and applied on start.sh without losing Fleet state.
+function test_changed_fleet_port_applies_after_restart() {
+    new_port=8221
+    agents_url="http://localhost:5601/api/fleet/agents"
+    agent_id_before=$(curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -H "kbn-xsrf: true" "$agents_url" \
+        | grep -o '"id":"[^"]*"' | head -n 1)
+
+    "${DEFAULT_DIR}/stop.sh"
+    sed -i.bak "s/^FLEET_LOCAL_PORT=.*/FLEET_LOCAL_PORT=${new_port}/" "${ENV_PATH}" && rm -f "${ENV_PATH}.bak"
+    close_extra_fds
+    "${DEFAULT_DIR}/start.sh"
+
+    result=""
+    for ((attempt = 1; attempt <= 30; attempt++)); do
+        result=$(curl --connect-timeout 5 --max-time 10 -k -s -o /dev/null \
+            -w "%{http_code}\n" "https://localhost:${new_port}/api/status") || result="000"
+        [ "$result" = "200" ] && break
+        sleep 2
+    done
+    assert_equals "200" "$result"
+
+    hosts=$(curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -H "kbn-xsrf: true" \
+        "http://localhost:5601/api/fleet/fleet_server_hosts")
+    assert_contains "https://localhost:${new_port}" "$hosts"
+
+    agent_id_after=$(curl -s -u "elastic:${ES_LOCAL_PASSWORD}" -H "kbn-xsrf: true" "$agents_url" \
+        | grep -o '"id":"[^"]*"' | head -n 1)
+    assert_not_empty "$agent_id_before"
+    assert_equals "$agent_id_before" "$agent_id_after"
+}

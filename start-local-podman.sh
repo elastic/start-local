@@ -1241,10 +1241,19 @@ main() {
   # (their named volumes are kept) so the new value takes effect.
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] && [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ] \
     && $CONTAINER_CLI inspect "${FLEET_LOCAL_CONTAINER_NAME}" >/dev/null 2>&1; then
-    current_fleet_port=$($CONTAINER_CLI port "${FLEET_LOCAL_CONTAINER_NAME}" 8220/tcp 2>/dev/null | head -n 1 | sed 's/.*://')
+    # Read the configured binding from inspect: `port` prints nothing for a
+    # stopped container, which is the normal stop.sh/start.sh case.
+    current_fleet_port=$($CONTAINER_CLI inspect "${FLEET_LOCAL_CONTAINER_NAME}" \
+      --format '{{range index .HostConfig.PortBindings "8220/tcp"}}{{.HostPort}}{{end}}' 2>/dev/null | head -n 1)
     if [ -n "$current_fleet_port" ] && [ "$current_fleet_port" != "${FLEET_LOCAL_PORT}" ]; then
       echo "FLEET_LOCAL_PORT changed (${current_fleet_port} -> ${FLEET_LOCAL_PORT}), recreating Fleet Server and Kibana containers."
-      $CONTAINER_CLI rm -f "${FLEET_LOCAL_CONTAINER_NAME}" "${KIBANA_LOCAL_CONTAINER_NAME}" >/dev/null 2>&1 || true
+      # Do not continue with stale configuration if a container cannot be
+      # removed: up.sh skips containers that still exist.
+      if ! output=$($CONTAINER_CLI rm -f "${FLEET_LOCAL_CONTAINER_NAME}" "${KIBANA_LOCAL_CONTAINER_NAME}" 2>&1); then
+        echo "Error: failed to remove the Fleet Server and Kibana containers."
+        printf '%s\n' "$output"
+        exit 1
+      fi
       "$script_dir/up.sh" || exit 1
     fi
   fi
