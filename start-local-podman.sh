@@ -143,6 +143,8 @@ get_latest_version() {
 # down.sh does not prompt. uninstall.sh does, so a failed start would leave
 # containers running and the later tests would collide with them.
 cleanup() {
+  # Only roll back what this invocation created.
+  [ "${installation_claimed:-false}" = "true" ] || return 0
   if [ -d "$installation_folder" ]; then
     if [ -f "$installation_folder/down.sh" ]; then
       ( cd "$installation_folder" && ./down.sh ) >/dev/null 2>&1 || true
@@ -153,17 +155,17 @@ cleanup() {
     if [ -n "${container_cli:-}" ]; then
       if [ "${fleet:-false}" = "true" ]; then
         "$container_cli" rm -f "$fleet_container_name" >/dev/null 2>&1 || true
-        "$container_cli" volume rm -f dev-fleet-server >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f "$fleet_volume_name" >/dev/null 2>&1 || true
       fi
       if [ "${edot:-false}" = "true" ]; then
         "$container_cli" rm -f "$edot_container_name" >/dev/null 2>&1 || true
       fi
       if [ "${esonly:-false}" != "true" ]; then
         "$container_cli" rm -f "$kibana_container_name" >/dev/null 2>&1 || true
-        "$container_cli" volume rm -f dev-kibana >/dev/null 2>&1 || true
+        "$container_cli" volume rm -f "$kibana_volume_name" >/dev/null 2>&1 || true
       fi
       "$container_cli" rm -f "$elasticsearch_container_name" >/dev/null 2>&1 || true
-      "$container_cli" volume rm -f dev-elasticsearch >/dev/null 2>&1 || true
+      "$container_cli" volume rm -f "$elasticsearch_volume_name" >/dev/null 2>&1 || true
       "$container_cli" network rm "$container_network_name" >/dev/null 2>&1 || true
     fi
 
@@ -291,6 +293,14 @@ startup() {
   edot_container_name="edot-collector${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
   # Fleet Server container name
   fleet_container_name="fleet-server${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Volume names. Scoped like the containers so installations in different
+  # ES_LOCAL_DIR folders never share or remove each other's data.
+  elasticsearch_volume_name="dev-elasticsearch${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  kibana_volume_name="dev-kibana${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  fleet_volume_name="dev-fleet-server${ES_LOCAL_DIR:+-${ES_LOCAL_DIR}}"
+  # Set once this run has created the installation folder. cleanup() does
+  # nothing before then, so an interrupt cannot touch an existing installation.
+  installation_claimed=false
   # Minimum disk space required for docker images + services (in GB)
   min_disk_space_required=5
 
@@ -482,6 +492,8 @@ create_installation_folder() {
   if [ ! -d "$folder" ]; then 
     mkdir "$folder"
   fi
+  # check_installation_folder already rejected a non-empty folder.
+  installation_claimed=true
   cd "$folder"
 }
 
@@ -524,6 +536,7 @@ CONTAINER_CLI=$container_cli
 CONTAINER_NETWORK_NAME=$container_network_name
 ES_LOCAL_VERSION=$es_version
 ES_LOCAL_CONTAINER_NAME=$elasticsearch_container_name
+ES_LOCAL_VOLUME_NAME=$elasticsearch_volume_name
 ES_LOCAL_PASSWORD=$es_password
 ES_LOCAL_PORT=9200
 ES_LOCAL_URL=http://localhost:\${ES_LOCAL_PORT}
@@ -551,6 +564,7 @@ EOM
   if [ "$fleet" = "true" ]; then
     cat >> .env <<- EOM
 FLEET_LOCAL_CONTAINER_NAME=$fleet_container_name
+FLEET_LOCAL_VOLUME_NAME=$fleet_volume_name
 FLEET_LOCAL_PORT=8220
 FLEET_LOCAL_URL=https://localhost:\${FLEET_LOCAL_PORT}
 EOM
@@ -559,6 +573,7 @@ EOM
   if [ "$esonly" = "false" ]; then
     cat >> .env <<- EOM
 KIBANA_LOCAL_CONTAINER_NAME=$kibana_container_name
+KIBANA_LOCAL_VOLUME_NAME=$kibana_volume_name
 KIBANA_LOCAL_PORT=5601
 KIBANA_LOCAL_PASSWORD=$kibana_password
 KIBANA_ENCRYPTION_KEY=$kibana_encryption_key
@@ -796,7 +811,7 @@ create_elasticsearch_container() {
     --hostname elasticsearch \
     --network-alias elasticsearch \
     -p "127.0.0.1:${ES_LOCAL_PORT}:9200" \
-    -v "dev-elasticsearch:/usr/share/elasticsearch/data" \
+    -v "${ES_LOCAL_VOLUME_NAME:-dev-elasticsearch}:/usr/share/elasticsearch/data" \
     -e "discovery.type=single-node" \
     -e "ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}" \
     -e "xpack.security.enabled=true" \
@@ -854,7 +869,7 @@ create_kibana_container() {
   kibana_args=""
   if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ]; then
     fleet_env="-e XPACK_FLEET_AGENTS_FLEET_SERVER_HOSTS=[\"https://localhost:${FLEET_LOCAL_PORT}\"] -e XPACK_FLEET_PACKAGES=[{\"name\":\"fleet_server\",\"version\":\"latest\"},{\"name\":\"system\",\"version\":\"latest\"},{\"name\":\"elastic_agent\",\"version\":\"latest\"}] -e XPACK_FLEET_AGENTPOLICIES=[{\"name\":\"Fleet-Server-Policy\",\"id\":\"fleet-server-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"data_output_id\":\"fleet-server-output\",\"monitoring_output_id\":\"fleet-server-output\",\"package_policies\":[{\"name\":\"fleet_server-1\",\"id\":\"fleet_server-1\",\"package\":{\"name\":\"fleet_server\"}},{\"name\":\"system-1\",\"id\":\"system-1\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-1\",\"id\":\"elastic_agent-1\",\"package\":{\"name\":\"elastic_agent\"}}]},{\"name\":\"Agent-Policy\",\"id\":\"agent-policy\",\"namespace\":\"default\",\"monitoring_enabled\":[\"logs\",\"metrics\"],\"is_default\":true,\"data_output_id\":\"agent-output\",\"monitoring_output_id\":\"agent-output\",\"package_policies\":[{\"name\":\"system-2\",\"id\":\"system-2\",\"package\":{\"name\":\"system\"}},{\"name\":\"elastic_agent-2\",\"id\":\"elastic_agent-2\",\"package\":{\"name\":\"elastic_agent\"}}]}]"
-    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":true,\"is_default_monitoring\":true},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":false,\"is_default_monitoring\":false}]"
+    kibana_args="--xpack.fleet.outputs=[{\"id\":\"fleet-server-output\",\"name\":\"Fleet-Server\",\"type\":\"elasticsearch\",\"hosts\":[\"http://elasticsearch:9200\"],\"is_default\":false,\"is_default_monitoring\":false},{\"id\":\"agent-output\",\"name\":\"Elasticsearch\",\"type\":\"elasticsearch\",\"hosts\":[\"http://localhost:${ES_LOCAL_PORT}\"],\"is_default\":true,\"is_default_monitoring\":true}]"
   fi
   if [ -n "${kibana_args}" ]; then
     set -- /usr/local/bin/kibana-docker "${kibana_args}"
@@ -869,7 +884,7 @@ create_kibana_container() {
     --hostname kibana \
     --network-alias kibana \
     -p "127.0.0.1:${KIBANA_LOCAL_PORT}:5601" \
-    -v "dev-kibana:/usr/share/kibana/data" \
+    -v "${KIBANA_LOCAL_VOLUME_NAME:-dev-kibana}:/usr/share/kibana/data" \
     $telemetry_mount \
     -e "SERVER_NAME=kibana" \
     -e "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" \
@@ -959,7 +974,7 @@ create_fleet_container() {
     --hostname fleet-server \
     --network-alias fleet-server \
     -p "127.0.0.1:${FLEET_LOCAL_PORT}:8220" \
-    -v "dev-fleet-server:/usr/share/elastic-agent/state:U" \
+    -v "${FLEET_LOCAL_VOLUME_NAME:-dev-fleet-server}:/usr/share/elastic-agent/state:U" \
     -e "FLEET_SERVER_ENABLE=1" \
     -e "FLEET_SERVER_ELASTICSEARCH_HOST=http://elasticsearch:9200" \
     -e "FLEET_SERVER_POLICY_ID=fleet-server-policy" \
@@ -1220,6 +1235,19 @@ main() {
 
   HEALTHCHECK_TIMEOUT=${HEALTHCHECK_TIMEOUT:-300}
   HEALTHCHECK_DELAY=${HEALTHCHECK_DELAY:-10}
+
+  # Published ports and Kibana's Fleet URL are fixed when the containers are
+  # created. If FLEET_LOCAL_PORT changed in .env, recreate Fleet and Kibana
+  # (their named volumes are kept) so the new value takes effect.
+  if [ -n "${FLEET_LOCAL_CONTAINER_NAME:-}" ] && [ -n "${KIBANA_LOCAL_CONTAINER_NAME:-}" ] \
+    && $CONTAINER_CLI inspect "${FLEET_LOCAL_CONTAINER_NAME}" >/dev/null 2>&1; then
+    current_fleet_port=$($CONTAINER_CLI port "${FLEET_LOCAL_CONTAINER_NAME}" 8220/tcp 2>/dev/null | head -n 1 | sed 's/.*://')
+    if [ -n "$current_fleet_port" ] && [ "$current_fleet_port" != "${FLEET_LOCAL_PORT}" ]; then
+      echo "FLEET_LOCAL_PORT changed (${current_fleet_port} -> ${FLEET_LOCAL_PORT}), recreating Fleet Server and Kibana containers."
+      $CONTAINER_CLI rm -f "${FLEET_LOCAL_CONTAINER_NAME}" "${KIBANA_LOCAL_CONTAINER_NAME}" >/dev/null 2>&1 || true
+      "$script_dir/up.sh" || exit 1
+    fi
+  fi
 
   # Start Elasticsearch and wait for it to respond to REST requests.
   start_container "${ES_LOCAL_CONTAINER_NAME}" || exit 1
@@ -1495,7 +1523,7 @@ remove_elasticsearch_container() {
 
   remove_status=0
   remove_container "${ES_LOCAL_CONTAINER_NAME}" || remove_status=1
-  remove_volume dev-elasticsearch || remove_status=1
+  remove_volume "${ES_LOCAL_VOLUME_NAME:-dev-elasticsearch}" || remove_status=1
   return "$remove_status"
 }
 
@@ -1504,7 +1532,7 @@ remove_kibana_container() {
 
   remove_status=0
   remove_container "${KIBANA_LOCAL_CONTAINER_NAME}" || remove_status=1
-  remove_volume dev-kibana || remove_status=1
+  remove_volume "${KIBANA_LOCAL_VOLUME_NAME:-dev-kibana}" || remove_status=1
   return "$remove_status"
 }
 
@@ -1519,7 +1547,7 @@ remove_fleet_container() {
 
   remove_status=0
   remove_container "${FLEET_LOCAL_CONTAINER_NAME}" || remove_status=1
-  remove_volume dev-fleet-server || remove_status=1
+  remove_volume "${FLEET_LOCAL_VOLUME_NAME:-dev-fleet-server}" || remove_status=1
   return "$remove_status"
 }
 
