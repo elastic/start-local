@@ -79,11 +79,21 @@ function cap () { tee "${1}/capture.out"; }
 # Return the previous output
 function ret () { cat "${1}/capture.out"; }
 
+# List the names of the running containers
+# Note: the Apple `container` CLI has no `ps` command and no Go templates
+function list_running_containers() {
+  if [ "$TEST_CONTAINER_CLI" = "container" ]; then
+    "$TEST_CONTAINER_CLI" ls --quiet
+  else
+    "$TEST_CONTAINER_CLI" ps --format '{{.Names}}'
+  fi
+}
+
 # Check if a container service is running
 function check_container_service_running() {
   local container_name=$1
   local containers
-  containers=$("$TEST_CONTAINER_CLI" ps --format '{{.Names}}')
+  containers=$(list_running_containers)
   if echo "$containers" | grep -q "^${container_name}$"; then
     return 0 # true
   else
